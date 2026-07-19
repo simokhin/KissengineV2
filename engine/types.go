@@ -88,9 +88,20 @@ type PieceType int
 type Color int
 type Square int
 
-// Move is a compact encoding of a chess move: bits 0-5 hold the destination square,
-// bits 6-11 hold the origin square.
-type Move uint16
+// File returns the file (0-7, a-h) of the square.
+func (s Square) File() int {
+	return int(s % 8)
+}
+
+// Rank returns the rank (0-7, 1-8) of the square.
+func (s Square) Rank() int {
+	return int(s / 8)
+}
+
+// onBoard reports whether the given file and rank are within the bounds of the chessboard.
+func onBoard(file, rank int) bool {
+	return file >= 0 && file <= 7 && rank >= 0 && rank <= 7
+}
 
 // Rank1 is a bitboard with all squares of the first rank set.
 var Rank1 Bitboard
@@ -109,24 +120,6 @@ var FileA Bitboard
 
 // FileH is a bitboard with all squares of the h-file set.
 var FileH Bitboard
-
-// rankMask returns a bitboard with all squares of the rank starting at start set.
-func rankMask(start Square) Bitboard {
-	var mask Bitboard
-	for s := start; s < start+8; s++ {
-		mask |= s.BB()
-	}
-	return mask
-}
-
-// fileMask returns a bitboard with all squares of the file starting at start set.
-func fileMask(start Square) Bitboard {
-	var mask Bitboard
-	for s := start; s <= start+56; s += 8 {
-		mask |= s.BB()
-	}
-	return mask
-}
 
 // init populates the Rank1, Rank3, Rank6, Rank8, FileA, FileH masks.
 func init() {

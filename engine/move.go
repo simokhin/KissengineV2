@@ -1,5 +1,9 @@
 package engine
 
+// Move is a compact encoding of a chess move: bits 0-5 hold the destination square,
+// bits 6-11 hold the origin square.
+type Move uint16
+
 // From returns the origin square of the move.
 func (m Move) From() Square {
 	sq := (m >> 6) & 0x3F
