@@ -97,3 +97,48 @@ func (p *Position) MakeMove(m Move) {
 
 	p.SideToMove ^= 1
 }
+
+// IsAttacked reports whether square s is attacked by any piece
+// of the given color.
+func (p *Position) IsAttacked(s Square, byColor Color) bool {
+	if KnightAttacks[s]&p.Pieces[Knight]&p.Colors[byColor] != 0 {
+		return true
+	} else if KingAttacks[s]&p.Pieces[King]&p.Colors[byColor] != 0 {
+		return true
+	}
+
+	rookLikeAttackers := p.Pieces[Rook] | p.Pieces[Queen]
+	rookLikeAttackers &= p.Colors[byColor]
+
+	if rookAttacksMagic(s, p.Pieces[AllPieces])&rookLikeAttackers != 0 {
+		return true
+	}
+
+	bishopLikeAttackers := p.Pieces[Bishop] | p.Pieces[Queen]
+	bishopLikeAttackers &= p.Colors[byColor]
+
+	if bishopAttacksMagic(s, p.Pieces[AllPieces])&bishopLikeAttackers != 0 {
+		return true
+	}
+
+	pawnRank := s.Rank() - 1
+	if byColor == Black {
+		pawnRank = s.Rank() + 1
+	}
+
+	for _, df := range []int{-1, 1} {
+		file := s.File() + df
+		if onBoard(file, pawnRank) {
+			sq := Square(pawnRank*8 + file)
+			if p.Pieces[Pawn]&p.Colors[byColor]&sq.BB() != 0 {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (p *Position) KingSquare(color Color) Square {
+	return (p.Pieces[King] & p.Colors[color]).LSB()
+}

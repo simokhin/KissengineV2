@@ -2,6 +2,31 @@ package engine
 
 import "testing"
 
+func TestIsAttacked(t *testing.T) {
+	pos := Position{}
+	pos.PutPiece(E4, White, Pawn)
+
+	if !pos.IsAttacked(D5, White) {
+		t.Fatalf("D5 should be attacked by white pawn on E4")
+	}
+	if !pos.IsAttacked(F5, White) {
+		t.Fatalf("F5 should be attacked by white pawn on E4")
+	}
+	if pos.IsAttacked(E5, White) {
+		t.Fatalf("E5 should NOT be attacked")
+	}
+
+	pos2 := Position{}
+	pos2.PutPiece(E5, Black, Pawn)
+
+	if !pos2.IsAttacked(D4, Black) {
+		t.Fatalf("D4 should be attacked by black pawn on E5")
+	}
+	if !pos2.IsAttacked(F4, Black) {
+		t.Fatalf("F4 should be attacked by black pawn on E5")
+	}
+}
+
 func TestMakeMove(t *testing.T) {
 	pos := StartPos()
 
