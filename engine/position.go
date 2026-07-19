@@ -58,6 +58,12 @@ func StartPos() *Position {
 func (s Square) File() int {
 	return int(s % 8)
 }
+
 func (s Square) Rank() int {
 	return int(s / 8)
+}
+
+// onBoard reports whether the given file and rank are within the bounds of the chessboard.
+func onBoard(file, rank int) bool {
+	return file >= 0 && file <= 7 && rank >= 0 && rank <= 7
 }

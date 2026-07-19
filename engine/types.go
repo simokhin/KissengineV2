@@ -87,3 +87,7 @@ const (
 type PieceType int
 type Color int
 type Square int
+
+// Move is a compact encoding of a chess move: bits 0-5 hold the destination square,
+// bits 6-11 hold the origin square.
+type Move uint16
