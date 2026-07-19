@@ -54,3 +54,10 @@ func StartPos() *Position {
 
 	return &position
 }
+
+func (s Square) File() int {
+	return int(s % 8)
+}
+func (s Square) Rank() int {
+	return int(s / 8)
+}
