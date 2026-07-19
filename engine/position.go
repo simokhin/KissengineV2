@@ -55,3 +55,45 @@ func StartPos() *Position {
 
 	return &position
 }
+
+// PieceAt returns the piece type standing on square s, or AllPieces if the
+// square is empty.
+func (p *Position) PieceAt(s Square) PieceType {
+	for pt := Pawn; pt <= King; pt++ {
+		if p.Pieces[pt]&s.BB() != 0 {
+			return pt
+		}
+	}
+
+	return AllPieces
+}
+
+// MakeMove applies the move to the position, updating piece placement,
+// handling captures and promotions, and switching the side to move.
+func (p *Position) MakeMove(m Move) {
+	from, to := m.From(), m.To()
+	color := p.SideToMove
+
+	movingPiece := p.PieceAt(from)
+	capturedPiece := p.PieceAt(to)
+
+	if capturedPiece != AllPieces {
+		p.Pieces[capturedPiece] &= ^to.BB()
+		p.Colors[color^1] &= ^to.BB()
+	}
+
+	p.Pieces[movingPiece] &= ^from.BB()
+
+	if m.IsPromotion() {
+		p.PutPiece(to, color, m.Promotion())
+	} else {
+		p.PutPiece(to, color, movingPiece)
+	}
+
+	p.Colors[color] ^= from.BB()
+	p.Colors[color] |= to.BB()
+	p.Pieces[AllPieces] ^= from.BB()
+	p.Pieces[AllPieces] |= to.BB()
+
+	p.SideToMove ^= 1
+}
