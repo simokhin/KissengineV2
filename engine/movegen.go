@@ -85,11 +85,103 @@ var knightOffsets = []knightOffset{
 	},
 }
 
+func subsets(mask Bitboard) []Bitboard {
+	var result []Bitboard
+
+	subset := Bitboard(0)
+	for {
+		result = append(result, subset)
+
+		subset = (subset - mask) & mask
+		if subset == 0 {
+			break
+		}
+	}
+
+	return result
+}
+
 // KnightAttacks is a precomputed table of knight attack bitboards indexed by square.
 var KnightAttacks [64]Bitboard
 
 // KingAttacks is a precomputed table of king attack bitboards indexed by square.
 var KingAttacks [64]Bitboard
+
+// GenerateQueenMoves returns all pseudo-legal queen moves for the given color
+// in the position
+func GenerateQueenMoves(pos Position, color Color) []Move {
+	var moves []Move
+	queen := pos.Pieces[Queen] & pos.Colors[color]
+
+	for queen != 0 {
+		from := queen.PopLSB()
+		attacks := queenAttacksMagic(from, pos.Pieces[AllPieces]) & ^pos.Colors[color]
+
+		for attacks != 0 {
+			to := attacks.PopLSB()
+			m := NewMove(from, to)
+			moves = append(moves, m)
+		}
+	}
+
+	return moves
+}
+
+// GenerateRookMoves returns all pseudo-legal rook moves for the given color
+// in the position
+func GenerateRookMoves(pos Position, color Color) []Move {
+	var moves []Move
+	rooks := pos.Pieces[Rook] & pos.Colors[color]
+
+	for rooks != 0 {
+		from := rooks.PopLSB()
+		attacks := rookAttacksMagic(from, pos.Pieces[AllPieces]) & ^pos.Colors[color]
+
+		for attacks != 0 {
+			to := attacks.PopLSB()
+			m := NewMove(from, to)
+			moves = append(moves, m)
+		}
+	}
+
+	return moves
+}
+
+// GenerateBishopMoves returns all pseudo-legal bishop moves for the given color
+// in the position
+func GenerateBishopMoves(pos Position, color Color) []Move {
+	var moves []Move
+	bishops := pos.Pieces[Bishop] & pos.Colors[color]
+
+	for bishops != 0 {
+		from := bishops.PopLSB()
+		attacks := bishopAttacksMagic(from, pos.Pieces[AllPieces]) & ^pos.Colors[color]
+
+		for attacks != 0 {
+			to := attacks.PopLSB()
+			m := NewMove(from, to)
+			moves = append(moves, m)
+		}
+	}
+
+	return moves
+}
+
+// rookRelevantMask returns the squares whose occupancy affect a rook's attacks from s,
+// excuding board edges.
+func rookRelevantMask(s Square) Bitboard {
+	return (rookAttacksNorth(s, 0) & ^Rank8) | (rookAttacksSouth(s, 0) & ^Rank1) |
+		(rookAttacksEast(s, 0) & ^FileH) | (rookAttacksWest(s, 0) & ^FileA)
+}
+
+// bishopRelevantMask returns the squares whose occupancy affects a bishop's attacks from s,
+// excluding board edges.
+func bishopRelevantMask(s Square) Bitboard {
+	return (bishopAttacksNorthEast(s, 0) & ^Rank8 & ^FileH) |
+		(bishopAttacksNorthWest(s, 0) & ^Rank8 & ^FileA) |
+		(bishopAttacksSouthEast(s, 0) & ^Rank1 & ^FileH) |
+		(bishopAttacksSouthWest(s, 0) & ^Rank1 & ^FileA)
+}
 
 // queenAttacks returns the squares a queen on s attacks
 // given the occupied squares on the board.
@@ -98,8 +190,7 @@ func queenAttacks(s Square, occupied Bitboard) Bitboard {
 }
 
 // bishopAttacksNorthEast returns the squares a bishop on s attacks moving north-east,
-//
-//	stopping at (and including) the first blocker.
+// stopping at (and including) the first blocker.
 func bishopAttacksNorthEast(s Square, occupied Bitboard) Bitboard {
 	var attacks Bitboard
 	current := s
@@ -117,8 +208,7 @@ func bishopAttacksNorthEast(s Square, occupied Bitboard) Bitboard {
 }
 
 // bishopAttacksNorthWest returns the squares a bishop on s attacks moving north-west,
-//
-//	stopping at (and including) the first blocker.
+// stopping at (and including) the first blocker.
 func bishopAttacksNorthWest(s Square, occupied Bitboard) Bitboard {
 	var attacks Bitboard
 	current := s
@@ -136,8 +226,7 @@ func bishopAttacksNorthWest(s Square, occupied Bitboard) Bitboard {
 }
 
 // bishopAttacksSouthEast returns the squares a bishop on s attacks moving south-east,
-//
-//	stopping at (and including) the first blocker.
+// stopping at (and including) the first blocker.
 func bishopAttacksSouthEast(s Square, occupied Bitboard) Bitboard {
 	var attacks Bitboard
 	current := s
@@ -155,8 +244,7 @@ func bishopAttacksSouthEast(s Square, occupied Bitboard) Bitboard {
 }
 
 // bishopAttacksSouthWest returns the squares a bishop on s attacks moving south-west,
-//
-//	stopping at (and including) the first blocker.
+// stopping at (and including) the first blocker.
 func bishopAttacksSouthWest(s Square, occupied Bitboard) Bitboard {
 	var attacks Bitboard
 	current := s

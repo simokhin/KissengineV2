@@ -18,7 +18,7 @@ func TestNewPromotionMove(t *testing.T) {
 	from := move.From()
 	to := move.To()
 	if from != A7 || to != A8 {
-		t.Fatalf("want from = %d and to = %d, get from = %d and to = %d", A7, A8, from, to)
+		t.Fatalf("want from = %d and to = %d; get from = %d and to = %d", A7, A8, from, to)
 	}
 }
 

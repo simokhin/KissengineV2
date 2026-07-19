@@ -2,6 +2,33 @@ package engine
 
 import "testing"
 
+func TestGenerateRookMoves(t *testing.T) {
+	pos := StartPos()
+
+	moves := GenerateRookMoves(*pos, White)
+	if len(moves) != 0 {
+		t.Fatalf("want 0, get %d", len(moves))
+	}
+}
+
+func TestGenerateQueenMoves(t *testing.T) {
+	pos := StartPos()
+
+	moves := GenerateQueenMoves(*pos, White)
+	if len(moves) != 0 {
+		t.Fatalf("want 0, get %d", len(moves))
+	}
+}
+
+func TestGenerateBishopMoves(t *testing.T) {
+	pos := StartPos()
+
+	moves := GenerateBishopMoves(*pos, White)
+	if len(moves) != 0 {
+		t.Fatalf("want 0, get %d", len(moves))
+	}
+}
+
 func TestPawnCaptures(t *testing.T) {
 	pos := Position{}
 

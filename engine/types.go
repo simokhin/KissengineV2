@@ -92,27 +92,49 @@ type Square int
 // bits 6-11 hold the origin square.
 type Move uint16
 
+// Rank1 is a bitboard with all squares of the first rank set.
+var Rank1 Bitboard
+
+// Rank3 is a bitboard with all squares of the third rank set.
 var Rank3 Bitboard
+
+// Rank6 is a bitboard with all squares of the sixth rank set.
 var Rank6 Bitboard
 
+// Rank8 is a bitboard with all squares of the eighth rank set.
+var Rank8 Bitboard
+
+// FileA is a bitboard with all squares of the a-file set.
 var FileA Bitboard
+
+// FileH is a bitboard with all squares of the h-file set.
 var FileH Bitboard
 
-// init populates the Rank3, Rank6, FileA, FileH masks.
+// rankMask returns a bitboard with all squares of the rank starting at start set.
+func rankMask(start Square) Bitboard {
+	var mask Bitboard
+	for s := start; s < start+8; s++ {
+		mask |= s.BB()
+	}
+	return mask
+}
+
+// fileMask returns a bitboard with all squares of the file starting at start set.
+func fileMask(start Square) Bitboard {
+	var mask Bitboard
+	for s := start; s <= start+56; s += 8 {
+		mask |= s.BB()
+	}
+	return mask
+}
+
+// init populates the Rank1, Rank3, Rank6, Rank8, FileA, FileH masks.
 func init() {
-	for s := A3; s <= H3; s++ {
-		Rank3 |= s.BB()
-	}
+	Rank1 = rankMask(A1)
+	Rank3 = rankMask(A3)
+	Rank6 = rankMask(A6)
+	Rank8 = rankMask(A8)
 
-	for s := A6; s <= H6; s++ {
-		Rank6 |= s.BB()
-	}
-
-	for s := A1; s <= A8; s += 8 {
-		FileA |= s.BB()
-	}
-
-	for s := H1; s <= H8; s += 8 {
-		FileH |= s.BB()
-	}
+	FileA = fileMask(A1)
+	FileH = fileMask(H1)
 }
