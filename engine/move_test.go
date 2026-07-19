@@ -18,8 +18,19 @@ func TestNewPromotionMove(t *testing.T) {
 	from := move.From()
 	to := move.To()
 	if from != A7 || to != A8 {
-		t.Fatalf("want from = %d and to = %d; get from = %d and to = %d", A7, A8, from, to)
+		t.Fatalf("want from = %d and to = %d, get from = %d and to = %d", A7, A8, from, to)
 	}
+}
+
+func TestGeneratePromotionMove(t *testing.T) {
+	pos := Position{}
+	pos.PutPiece(A7, White, Pawn)
+
+	moves := GeneratePawnMoves(pos, White)
+	if len(moves) != 4 {
+		t.Fatalf("want 4, get %d", len(moves))
+	}
+
 }
 
 func TestNewMove(t *testing.T) {
@@ -29,5 +40,9 @@ func TestNewMove(t *testing.T) {
 
 	if from != E2 || to != E4 {
 		t.Fatalf("want from = %d and to = %d; get from = %d and to = %d", E2, E4, from, to)
+	}
+
+	if move.IsPromotion() {
+		t.Fatalf("want false; get true")
 	}
 }

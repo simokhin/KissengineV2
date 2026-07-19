@@ -91,6 +91,93 @@ var KnightAttacks [64]Bitboard
 // KingAttacks is a precomputed table of king attack bitboards indexed by square.
 var KingAttacks [64]Bitboard
 
+// appendPawnMove appends the move from-to to moves, expanding it into the
+// four promotion moves if to is on the last rank for the given color.
+func appendPawnMove(moves []Move, from, to Square, color Color) []Move {
+	promotionRank := 7
+	if color == Black {
+		promotionRank = 0
+	}
+
+	if to.Rank() != promotionRank {
+		return append(moves, NewMove(from, to))
+	}
+
+	return append(moves,
+		NewPromotionMove(from, to, Queen),
+		NewPromotionMove(from, to, Rook),
+		NewPromotionMove(from, to, Bishop),
+		NewPromotionMove(from, to, Knight),
+	)
+}
+
+// GeneratePawnMoves returns all pseudo-legal pawn pushes and captures
+// for the given color in the position.
+func GeneratePawnMoves(pos Position, color Color) []Move {
+	var moves []Move
+
+	pawnPushes := PawnPush(pos, color)
+	doublePawnPushes := DoublePawnPush(pos, color)
+
+	pawnCapturesLeft := PawnCapturesLeft(pos, color)
+	pawnCapturesRight := PawnCapturesRight(pos, color)
+
+	for pawnPushes != 0 {
+		to := pawnPushes.PopLSB()
+		var from Square
+
+		if color == White {
+			from = to - 8
+		} else {
+			from = to + 8
+		}
+
+		moves = appendPawnMove(moves, from, to, color)
+	}
+
+	for doublePawnPushes != 0 {
+		to := doublePawnPushes.PopLSB()
+		var from Square
+
+		if color == White {
+			from = to - 16
+		} else {
+			from = to + 16
+		}
+
+		m := NewMove(from, to)
+		moves = append(moves, m)
+	}
+
+	for pawnCapturesLeft != 0 {
+		to := pawnCapturesLeft.PopLSB()
+		var from Square
+
+		if color == White {
+			from = to - 7
+		} else {
+			from = to + 9
+		}
+
+		moves = appendPawnMove(moves, from, to, color)
+	}
+
+	for pawnCapturesRight != 0 {
+		to := pawnCapturesRight.PopLSB()
+		var from Square
+
+		if color == White {
+			from = to - 9
+		} else {
+			from = to + 7
+		}
+
+		moves = appendPawnMove(moves, from, to, color)
+	}
+
+	return moves
+}
+
 // GenerateKingMoves returns all pseudo-legal king moves for the given color in the position.
 func GenerateKingMoves(pos Position, color Color) []Move {
 	var moves []Move
@@ -182,27 +269,32 @@ func DoublePawnPush(pos Position, color Color) Bitboard {
 	return ^pos.Pieces[AllPieces] & targetRank
 }
 
+// PawnCapturesLeft returns the bitboard of capture-left diagonal squares
+// for pawns of the given color that contain an enemy piece.
+func PawnCapturesLeft(pos Position, color Color) Bitboard {
+	pawns := pos.Pieces[Pawn] & pos.Colors[color]
+
+	if color == White {
+		return (pawns & ^FileA << 7) & pos.Colors[color^1]
+	}
+	return (pawns & ^FileA >> 9) & pos.Colors[color^1]
+}
+
+// PawnCapturesRight returns the bitboard of capture-right diagonal squares
+// for pawns of the given color that contain an enemy piece.
+func PawnCapturesRight(pos Position, color Color) Bitboard {
+	pawns := pos.Pieces[Pawn] & pos.Colors[color]
+
+	if color == White {
+		return (pawns & ^FileH << 9) & pos.Colors[color^1]
+	}
+	return (pawns & ^FileH >> 7) & pos.Colors[color^1]
+}
+
 // PawnCaptures returns the bitboard of diagonal capture squares
 // for pawns of the given color that contain an enemy piece.
 func PawnCaptures(pos Position, color Color) Bitboard {
-	var leftCapture Bitboard
-	var rightCapture Bitboard
-	var allCaptures Bitboard
-	var pawns Bitboard
-
-	if color == White {
-		pawns = pos.Pieces[Pawn] & pos.Colors[color]
-		leftCapture = (pawns & ^FileA << 7) & pos.Colors[color^1]
-		rightCapture = (pawns & ^FileH << 9) & pos.Colors[color^1]
-		allCaptures |= leftCapture | rightCapture
-	} else {
-		pawns = pos.Pieces[Pawn] & pos.Colors[color]
-		leftCapture = (pawns & ^FileA >> 9) & pos.Colors[color^1]
-		rightCapture = (pawns & ^FileH >> 7) & pos.Colors[color^1]
-		allCaptures |= leftCapture | rightCapture
-	}
-
-	return allCaptures
+	return PawnCapturesLeft(pos, color) | PawnCapturesRight(pos, color)
 }
 
 // init populates the knightAttacks and kingAttacks table for all 64 squares.

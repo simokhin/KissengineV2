@@ -42,6 +42,33 @@ func TestPawnPush(t *testing.T) {
 	}
 }
 
+func TestGeneratePawnMoves(t *testing.T) {
+	pos := StartPos()
+
+	moves := GeneratePawnMoves(*pos, White)
+	if len(moves) != 16 {
+		t.Fatalf("want 16, get %d", len(moves))
+	}
+
+	moves = GeneratePawnMoves(*pos, Black)
+	if len(moves) != 16 {
+		t.Fatalf("want 16, get %d", len(moves))
+	}
+}
+
+func TestGeneratePawnCaptures(t *testing.T) {
+	pos := Position{}
+
+	pos.PutPiece(A5, Black, Pawn)
+	pos.PutPiece(B4, White, Pawn)
+	pos.PutPiece(A4, White, Pawn)
+
+	pawnCaptures := GeneratePawnMoves(pos, Black)
+	if len(pawnCaptures) != 1 {
+		t.Fatalf("want 1, get %d", len(pawnCaptures))
+	}
+}
+
 func TestGenerateKingMoves(t *testing.T) {
 	pos := StartPos()
 
