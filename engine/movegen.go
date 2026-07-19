@@ -379,9 +379,9 @@ func PawnCapturesLeft(pos Position, color Color) Bitboard {
 	pawns := pos.Pieces[Pawn] & pos.Colors[color]
 
 	if color == White {
-		return (pawns & ^FileA << 7) & pos.Colors[color^1]
+		return (pawns & ^FileA << 7) & (pos.Colors[color^1] | pos.EnPassant.BB())
 	}
-	return (pawns & ^FileA >> 9) & pos.Colors[color^1]
+	return (pawns & ^FileA >> 9) & (pos.Colors[color^1] | pos.EnPassant.BB())
 }
 
 // PawnCapturesRight returns the bitboard of capture-right diagonal squares
@@ -390,9 +390,9 @@ func PawnCapturesRight(pos Position, color Color) Bitboard {
 	pawns := pos.Pieces[Pawn] & pos.Colors[color]
 
 	if color == White {
-		return (pawns & ^FileH << 9) & pos.Colors[color^1]
+		return (pawns & ^FileH << 9) & (pos.Colors[color^1] | pos.EnPassant.BB())
 	}
-	return (pawns & ^FileH >> 7) & pos.Colors[color^1]
+	return (pawns & ^FileH >> 7) & (pos.Colors[color^1] | pos.EnPassant.BB())
 }
 
 // PawnCaptures returns the bitboard of diagonal capture squares

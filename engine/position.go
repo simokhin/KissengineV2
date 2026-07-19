@@ -4,6 +4,9 @@ type Position struct {
 	Pieces     [7]Bitboard
 	Colors     [2]Bitboard
 	SideToMove Color
+	// EnPassant is the square a pawn can capture to via en passant, or
+	// NoSquare if no en passant capture is currently available.
+	EnPassant Square
 }
 
 // PutPiece places a piece of the given color and type on square s.
@@ -16,6 +19,8 @@ func (p *Position) PutPiece(s Square, c Color, pt PieceType) {
 // StartPos returns a new Position set up in the standard chess starting configuration.
 func StartPos() *Position {
 	position := Position{}
+
+	position.EnPassant = NoSquare
 
 	// White pawns
 	for s := A2; s <= H2; s++ {
@@ -75,11 +80,28 @@ func (p *Position) MakeMove(m Move) {
 	color := p.SideToMove
 
 	movingPiece := p.PieceAt(from)
+	if movingPiece == Pawn && (to-from == 16 || from-to == 16) {
+		p.EnPassant = (from + to) / 2
+	} else {
+		p.EnPassant = NoSquare
+	}
+
 	capturedPiece := p.PieceAt(to)
 
 	if capturedPiece != AllPieces {
 		p.Pieces[capturedPiece] &= ^to.BB()
 		p.Colors[color^1] &= ^to.BB()
+	}
+
+	if movingPiece == Pawn && from.File() != to.File() && capturedPiece == AllPieces {
+		capturedSquare := to - 8
+		if color == Black {
+			capturedSquare = to + 8
+		}
+
+		p.Pieces[Pawn] &= ^capturedSquare.BB()
+		p.Colors[color^1] &= ^capturedSquare.BB()
+		p.Pieces[AllPieces] &= ^capturedSquare.BB()
 	}
 
 	p.Pieces[movingPiece] &= ^from.BB()

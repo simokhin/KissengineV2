@@ -2,6 +2,29 @@ package engine
 
 import "testing"
 
+func TestEnPassant(t *testing.T) {
+	pos := *StartPos()
+
+	if pos.EnPassant != NoSquare {
+		t.Fatalf("want %d, get %d", NoSquare, pos.EnPassant)
+	}
+
+	move := NewMove(E2, E4)
+	pos.MakeMove(move)
+
+	if pos.EnPassant != E3 {
+		t.Fatalf("want %d, get %d", E3, pos.EnPassant)
+	}
+
+	move = NewMove(E7, E6)
+	pos.MakeMove(move)
+
+	if pos.EnPassant != NoSquare {
+		t.Fatalf("want %d, get %d", NoSquare, pos.EnPassant)
+	}
+
+}
+
 func TestIsAttacked(t *testing.T) {
 	pos := Position{}
 	pos.PutPiece(E4, White, Pawn)
