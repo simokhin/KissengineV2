@@ -91,6 +91,25 @@ var KnightAttacks [64]Bitboard
 // KingAttacks is a precomputed table of king attack bitboards indexed by square.
 var KingAttacks [64]Bitboard
 
+// GenerateLegalMoves returns all fully legal moves for the given color in the position,
+// filtering out pseudo-legal moves that leave the moving side's king in check
+func GenerateLegalMoves(pos Position, color Color) []Move {
+	pseudoLMoves := GenerateMoves(pos, color)
+
+	var legalmoves []Move
+
+	for _, m := range pseudoLMoves {
+		newPos := pos
+		newPos.MakeMove(m)
+		kingSqure := newPos.KingSquare(color)
+		if !newPos.IsAttacked(kingSqure, color^1) {
+			legalmoves = append(legalmoves, m)
+		}
+	}
+
+	return legalmoves
+}
+
 // GenerateMoves returns all pseudo-legal moves for the given color in the position.
 func GenerateMoves(pos Position, color Color) []Move {
 	var moves []Move
