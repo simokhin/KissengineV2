@@ -7,6 +7,7 @@ type Position struct {
 	// EnPassant is the square a pawn can capture to via en passant, or
 	// NoSquare if no en passant capture is currently available.
 	EnPassant Square
+	Castling  CastlingRights
 }
 
 // PutPiece places a piece of the given color and type on square s.
@@ -21,6 +22,7 @@ func StartPos() *Position {
 	position := Position{}
 
 	position.EnPassant = NoSquare
+	position.Castling = WhiteKingside | WhiteQueenside | BlackKingside | BlackQueenside
 
 	// White pawns
 	for s := A2; s <= H2; s++ {
@@ -80,6 +82,46 @@ func (p *Position) MakeMove(m Move) {
 	color := p.SideToMove
 
 	movingPiece := p.PieceAt(from)
+
+	if movingPiece == King {
+		fileDiff := to.File() - from.File()
+		if fileDiff == 2 || fileDiff == -2 {
+			var rookFrom, rookTo Square
+			if fileDiff == 2 {
+				rookFrom = to + 1
+				rookTo = to - 1
+			} else {
+				rookFrom = to - 2
+				rookTo = to + 1
+			}
+
+			p.Pieces[Rook] &= ^rookFrom.BB()
+			p.Colors[color] &= ^rookFrom.BB()
+			p.Pieces[Rook] |= rookTo.BB()
+			p.Colors[color] |= rookTo.BB()
+			p.Pieces[AllPieces] &= ^rookFrom.BB()
+			p.Pieces[AllPieces] |= rookTo.BB()
+		}
+		if color == White {
+			p.Castling &^= WhiteKingside | WhiteQueenside
+		} else {
+			p.Castling &^= BlackKingside | BlackQueenside
+		}
+	}
+
+	if from == A1 || to == A1 {
+		p.Castling &^= WhiteQueenside
+	}
+	if from == H1 || to == H1 {
+		p.Castling &^= WhiteKingside
+	}
+	if from == A8 || to == A8 {
+		p.Castling &^= BlackQueenside
+	}
+	if from == H8 || to == H8 {
+		p.Castling &^= BlackKingside
+	}
+
 	if movingPiece == Pawn && (to-from == 16 || from-to == 16) {
 		p.EnPassant = (from + to) / 2
 	} else {

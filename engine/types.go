@@ -84,9 +84,19 @@ const (
 	NoSquare
 )
 
+const (
+	WhiteKingside CastlingRights = 1 << iota
+	WhiteQueenside
+	BlackKingside
+	BlackQueenside
+)
+
 type PieceType int
 type Color int
 type Square int
+
+// CastlingRights is a bitmask of which castling moves still available.
+type CastlingRights uint8
 
 // File returns the file (0-7, a-h) of the square.
 func (s Square) File() int {

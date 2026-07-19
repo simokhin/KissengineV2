@@ -132,6 +132,42 @@ func GenerateMoves(pos Position, color Color) []Move {
 	queenMoves := GenerateQueenMoves(pos, color)
 	moves = append(moves, queenMoves...)
 
+	castleMoves := GenerateCastleMoves(pos, color)
+	moves = append(moves, castleMoves...)
+
+	return moves
+}
+
+// GenerateCastleMoves returns all pseudo-legal castling moves for the given color in the position.
+func GenerateCastleMoves(pos Position, color Color) []Move {
+	var moves []Move
+
+	if color == White {
+		if pos.Castling&WhiteKingside != 0 &&
+			pos.PieceAt(F1) == AllPieces && pos.PieceAt(G1) == AllPieces &&
+			!pos.IsAttacked(E1, Black) && !pos.IsAttacked(F1, Black) && !pos.IsAttacked(G1, Black) {
+			moves = append(moves, NewMove(E1, G1))
+		}
+
+		if pos.Castling&WhiteQueenside != 0 &&
+			pos.PieceAt(D1) == AllPieces && pos.PieceAt(C1) == AllPieces && pos.PieceAt(B1) == AllPieces &&
+			!pos.IsAttacked(E1, Black) && !pos.IsAttacked(D1, Black) && !pos.IsAttacked(C1, Black) {
+			moves = append(moves, NewMove(E1, C1))
+		}
+	} else {
+		if pos.Castling&BlackKingside != 0 &&
+			pos.PieceAt(F8) == AllPieces && pos.PieceAt(G8) == AllPieces &&
+			!pos.IsAttacked(E8, White) && !pos.IsAttacked(F8, White) && !pos.IsAttacked(G8, White) {
+			moves = append(moves, NewMove(E8, G8))
+		}
+
+		if pos.Castling&BlackQueenside != 0 &&
+			pos.PieceAt(D8) == AllPieces && pos.PieceAt(C8) == AllPieces && pos.PieceAt(B8) == AllPieces &&
+			!pos.IsAttacked(E8, White) && !pos.IsAttacked(D8, White) && !pos.IsAttacked(C8, White) {
+			moves = append(moves, NewMove(E8, C8))
+		}
+	}
+
 	return moves
 }
 
