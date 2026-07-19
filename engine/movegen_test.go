@@ -2,6 +2,15 @@ package engine
 
 import "testing"
 
+func TestGenerateMoves(t *testing.T) {
+	pos := StartPos()
+
+	moves := GenerateMoves(*pos, White)
+	if len(moves) != 20 {
+		t.Fatalf("want 20, get %d", len(moves))
+	}
+}
+
 func TestGenerateRookMoves(t *testing.T) {
 	pos := StartPos()
 

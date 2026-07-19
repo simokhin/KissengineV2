@@ -19,6 +19,22 @@ var rookMagics [64]magicEntry
 // indexed by square.
 var bishopMagics [64]magicEntry
 
+func subsets(mask Bitboard) []Bitboard {
+	var result []Bitboard
+
+	subset := Bitboard(0)
+	for {
+		result = append(result, subset)
+
+		subset = (subset - mask) & mask
+		if subset == 0 {
+			break
+		}
+	}
+
+	return result
+}
+
 func queenAttacksMagic(s Square, occupied Bitboard) Bitboard {
 	return rookAttacksMagic(s, occupied) | bishopAttacksMagic(s, occupied)
 }

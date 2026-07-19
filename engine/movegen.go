@@ -85,27 +85,36 @@ var knightOffsets = []knightOffset{
 	},
 }
 
-func subsets(mask Bitboard) []Bitboard {
-	var result []Bitboard
-
-	subset := Bitboard(0)
-	for {
-		result = append(result, subset)
-
-		subset = (subset - mask) & mask
-		if subset == 0 {
-			break
-		}
-	}
-
-	return result
-}
-
 // KnightAttacks is a precomputed table of knight attack bitboards indexed by square.
 var KnightAttacks [64]Bitboard
 
 // KingAttacks is a precomputed table of king attack bitboards indexed by square.
 var KingAttacks [64]Bitboard
+
+// GenerateMoves returns all pseudo-legal moves for the given color in the position.
+func GenerateMoves(pos Position, color Color) []Move {
+	var moves []Move
+
+	pawnMoves := GeneratePawnMoves(pos, color)
+	moves = append(moves, pawnMoves...)
+
+	kingMoves := GenerateKingMoves(pos, color)
+	moves = append(moves, kingMoves...)
+
+	knightMoves := GenerateKnightMoves(pos, color)
+	moves = append(moves, knightMoves...)
+
+	bishopMoves := GenerateBishopMoves(pos, color)
+	moves = append(moves, bishopMoves...)
+
+	rookMoves := GenerateRookMoves(pos, color)
+	moves = append(moves, rookMoves...)
+
+	queenMoves := GenerateQueenMoves(pos, color)
+	moves = append(moves, queenMoves...)
+
+	return moves
+}
 
 // GenerateQueenMoves returns all pseudo-legal queen moves for the given color
 // in the position

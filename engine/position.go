@@ -1,8 +1,9 @@
 package engine
 
 type Position struct {
-	Pieces [7]Bitboard
-	Colors [2]Bitboard
+	Pieces     [7]Bitboard
+	Colors     [2]Bitboard
+	SideToMove Color
 }
 
 // PutPiece places a piece of the given color and type on square s.
