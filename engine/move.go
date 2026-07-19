@@ -16,3 +16,20 @@ func (m Move) To() Square {
 func NewMove(from, to Square) Move {
 	return Move(from)<<6 | Move(to)
 }
+
+// NewPromotionMove creates a Move representing a pawn promoting to the
+// given piece type.
+func NewPromotionMove(from, to Square, pPiece PieceType) Move {
+	return Move(from)<<6 | Move(to) | Move(pPiece-1)<<12 | Move(1)<<14
+}
+
+// Promotion returns the piece type a pawn promotes to.
+// Only meaningful when IsPromotion() is true.
+func (m Move) Promotion() PieceType {
+	return PieceType(((m >> 12) & 0x3) + 1)
+}
+
+// IsPromotion reports whether the move is a pawn promotion.
+func (m Move) IsPromotion() bool {
+	return (m & (1 << 14)) != 0
+}
