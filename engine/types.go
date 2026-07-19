@@ -91,3 +91,28 @@ type Square int
 // Move is a compact encoding of a chess move: bits 0-5 hold the destination square,
 // bits 6-11 hold the origin square.
 type Move uint16
+
+var Rank3 Bitboard
+var Rank6 Bitboard
+
+var FileA Bitboard
+var FileH Bitboard
+
+// init populates the Rank3, Rank6, FileA, FileH masks.
+func init() {
+	for s := A3; s <= H3; s++ {
+		Rank3 |= s.BB()
+	}
+
+	for s := A6; s <= H6; s++ {
+		Rank6 |= s.BB()
+	}
+
+	for s := A1; s <= A8; s += 8 {
+		FileA |= s.BB()
+	}
+
+	for s := H1; s <= H8; s += 8 {
+		FileH |= s.BB()
+	}
+}

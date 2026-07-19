@@ -2,6 +2,46 @@ package engine
 
 import "testing"
 
+func TestPawnCaptures(t *testing.T) {
+	pos := Position{}
+
+	pos.PutPiece(A5, Black, Pawn)
+	pos.PutPiece(B4, White, Pawn)
+
+	pawnCaptures := PawnCaptures(pos, Black)
+	if pawnCaptures.PopCount() != 1 {
+		t.Fatalf("want 1; get %d", pawnCaptures.PopCount())
+	}
+}
+
+func TestDoublePawnPush(t *testing.T) {
+	pos := StartPos()
+
+	targetRank := DoublePawnPush(*pos, White)
+	if targetRank.PopCount() != 8 {
+		t.Fatalf("want 8, get %d", targetRank.PopCount())
+	}
+
+	targetRank = DoublePawnPush(*pos, Black)
+	if targetRank.PopCount() != 8 {
+		t.Fatalf("want 8, get %d", targetRank.PopCount())
+	}
+}
+
+func TestPawnPush(t *testing.T) {
+	pos := StartPos()
+
+	targetRank := PawnPush(*pos, White)
+	if targetRank.PopCount() != 8 {
+		t.Fatalf("want 8, get %d", targetRank.PopCount())
+	}
+
+	targetRank = PawnPush(*pos, Black)
+	if targetRank.PopCount() != 8 {
+		t.Fatalf("want 8, get %d", targetRank.PopCount())
+	}
+}
+
 func TestGenerateKingMoves(t *testing.T) {
 	pos := StartPos()
 

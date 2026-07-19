@@ -159,6 +159,52 @@ func KingAttacksFrom(s Square) Bitboard {
 	return attacks
 }
 
+// PawnPush returns the bitboard of single-step forward pushes for pawns of the given color.
+func PawnPush(pos Position, color Color) Bitboard {
+	var targetRank Bitboard
+	if color == White {
+		targetRank = (pos.Pieces[Pawn] & pos.Colors[color]) << 8
+	} else {
+		targetRank = (pos.Pieces[Pawn] & pos.Colors[color]) >> 8
+	}
+	return ^pos.Pieces[AllPieces] & targetRank
+}
+
+// DoublePawnPush returns the bitboard of two-step forward pushes for pawns
+// of the given color still on their starting rank.
+func DoublePawnPush(pos Position, color Color) Bitboard {
+	var targetRank Bitboard
+	if color == White {
+		targetRank = (PawnPush(pos, color) & Rank3) << 8
+	} else {
+		targetRank = (PawnPush(pos, color) & Rank6) >> 8
+	}
+	return ^pos.Pieces[AllPieces] & targetRank
+}
+
+// PawnCaptures returns the bitboard of diagonal capture squares
+// for pawns of the given color that contain an enemy piece.
+func PawnCaptures(pos Position, color Color) Bitboard {
+	var leftCapture Bitboard
+	var rightCapture Bitboard
+	var allCaptures Bitboard
+	var pawns Bitboard
+
+	if color == White {
+		pawns = pos.Pieces[Pawn] & pos.Colors[color]
+		leftCapture = (pawns & ^FileA << 7) & pos.Colors[color^1]
+		rightCapture = (pawns & ^FileH << 9) & pos.Colors[color^1]
+		allCaptures |= leftCapture | rightCapture
+	} else {
+		pawns = pos.Pieces[Pawn] & pos.Colors[color]
+		leftCapture = (pawns & ^FileA >> 9) & pos.Colors[color^1]
+		rightCapture = (pawns & ^FileH >> 7) & pos.Colors[color^1]
+		allCaptures |= leftCapture | rightCapture
+	}
+
+	return allCaptures
+}
+
 // init populates the knightAttacks and kingAttacks table for all 64 squares.
 func init() {
 	for i := range KnightAttacks {
