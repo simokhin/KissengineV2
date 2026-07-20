@@ -13,9 +13,10 @@ const (
 )
 
 type SearchState struct {
-	ctx     context.Context
-	nodes   uint64
-	killers [64][2]Move
+	ctx        context.Context
+	nodes      uint64
+	killers    [64][2]Move
+	historyHeu [2][64][64]int
 }
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
@@ -137,6 +138,9 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 			// Store killer moves
 			if !isCapture(*pos, move) && s.killers[ply][0] != move {
 				s.storeKiller(ply, move)
+
+				// History heuristic
+				s.historyHeu[pos.SideToMove][move.From()][move.To()] += depth * depth
 			}
 
 			// Store position in tTable
@@ -412,6 +416,9 @@ func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int
 			score += 50
 		case s.killers[ply][1]:
 			score += 40
+		default:
+			// History heuristic
+			score += min(s.historyHeu[pos.SideToMove][m.From()][m.To()]/1000, 39)
 		}
 	}
 
