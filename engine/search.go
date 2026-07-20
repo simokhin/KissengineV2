@@ -14,7 +14,7 @@ const (
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
 // and returns the score from the perspective of the side to move.
-func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha, beta int, history []uint64) int {
+func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha, beta int, history []uint64, nullMove bool) int {
 	*nodes++
 
 	select {
@@ -61,6 +61,17 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 		return Quiescence(ctx, pos, nodes, alpha, beta)
 	}
 
+	// Null move logic
+	if !nullMove && depth >= 4 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && hasNonPawnMaterial(pos, pos.SideToMove) {
+		R := 3
+		nullPos := pos
+		nullPos.MakeNullMove()
+		nullScore := -Negamax(ctx, nullPos, depth-1-R, nodes, -beta, -beta+1, history, true)
+		if nullScore >= beta {
+			return beta
+		}
+	}
+
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
 	// MVV-LVA
@@ -86,7 +97,7 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 
 		newHistory := append(history, newPos.Hash()) // Save new position's hash to history
 
-		nextEval := -Negamax(ctx, newPos, depth-1, nodes, -beta, -alpha, newHistory)
+		nextEval := -Negamax(ctx, newPos, depth-1, nodes, -beta, -alpha, newHistory, false)
 		if nextEval >= beta {
 
 			// Store position in tTable
@@ -206,7 +217,7 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (M
 	for _, move := range moves {
 		newPos := pos
 		newPos.MakeMove(move)
-		score := -Negamax(ctx, newPos, depth-1, &nodes, -beta, -alpha, history)
+		score := -Negamax(ctx, newPos, depth-1, &nodes, -beta, -alpha, history, false)
 		if score > bestScore {
 			bestScore = score
 			bestMove = move
@@ -299,4 +310,13 @@ func SearchDepth(pos Position, maxDepth int, history []uint64) (Move, uint64, in
 	}
 
 	return bestMove, totalNodes, completedDepth, bestScore
+}
+
+func (p *Position) MakeNullMove() {
+	p.SideToMove ^= 1
+	p.EnPassant = NoSquare
+}
+
+func hasNonPawnMaterial(pos Position, color Color) bool {
+	return (pos.Pieces[Knight]|pos.Pieces[Bishop]|pos.Pieces[Rook]|pos.Pieces[Queen])&pos.Colors[color] != 0
 }
