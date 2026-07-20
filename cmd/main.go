@@ -136,9 +136,6 @@ func computeTimeLimit(fields []string, sideToMove engine.Color) time.Duration {
 // handlePosition parses a "position [startpos | fen <fen>]
 // [moves ...]" command.
 func handlePosition(fileds []string) (*engine.Position, []uint64) {
-	pos := engine.StartPos()
-	history := []uint64{pos.Hash()}
-
 	movesIndex := -1
 	for i, f := range fileds {
 		if f == "moves" {
@@ -146,6 +143,20 @@ func handlePosition(fileds []string) (*engine.Position, []uint64) {
 			break
 		}
 	}
+
+	end := len(fileds)
+	if movesIndex != -1 {
+		end = movesIndex
+	}
+
+	var pos *engine.Position
+	if len(fileds) > 1 && fileds[1] == "fen" {
+		pos = engine.ParseFEN(strings.Join(fileds[2:end], " "))
+	} else {
+		pos = engine.StartPos()
+	}
+
+	history := []uint64{pos.Hash()}
 
 	if movesIndex != -1 {
 		for _, uci := range fileds[movesIndex+1:] {
