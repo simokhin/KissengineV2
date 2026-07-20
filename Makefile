@@ -1,6 +1,6 @@
 BINARY_NAME := KissengineV2
 BUILD_DIR   := bin
-VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)-$(shell date +%Y%m%d%H%M%S)
 
 .PHONY: build test vet fmt clean run
 

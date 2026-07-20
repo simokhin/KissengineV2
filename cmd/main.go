@@ -38,8 +38,8 @@ func main() {
 
 		case "go":
 			timeLimit := computeTimeLimit(fields, pos.SideToMove)
-			move, nodes := engine.SearchTimed(*pos, timeLimit)
-			fmt.Printf("info nodes %d\n", nodes)
+			move, nodes, depth := engine.SearchTimed(*pos, timeLimit)
+			fmt.Printf("info depth %d nodes %d\n", depth, nodes)
 			fmt.Println("bestmove", move.UCI())
 		case "quit":
 			return
