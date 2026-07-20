@@ -1,13 +1,19 @@
 package engine
 
 type Position struct {
-	Pieces     [7]Bitboard
-	Colors     [2]Bitboard
+	Pieces [7]Bitboard
+	Colors [2]Bitboard
+
 	SideToMove Color
 	// EnPassant is the square a pawn can capture to via en passant, or
 	// NoSquare if no en passant capture is currently available.
 	EnPassant Square
-	Castling  CastlingRights
+
+	Castling CastlingRights
+
+	// FiftyMovesRule counts half-moves since the last pawn move or capture;
+	// reachng 100 (50 half moves) makes the position a forced draw.
+	FiftyMovesRule int
 }
 
 // PutPiece places a piece of the given color and type on square s.
@@ -129,6 +135,13 @@ func (p *Position) MakeMove(m Move) {
 	}
 
 	capturedPiece := p.PieceAt(to)
+
+	// Change FiftyMovesRule count
+	if movingPiece == Pawn || capturedPiece != AllPieces {
+		p.FiftyMovesRule = 0
+	} else {
+		p.FiftyMovesRule += 1
+	}
 
 	if capturedPiece != AllPieces {
 		p.Pieces[capturedPiece] &= ^to.BB()

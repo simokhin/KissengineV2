@@ -12,6 +12,9 @@ import (
 
 func main() {
 	pos := engine.StartPos()
+
+	var history []uint64
+
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for scanner.Scan() {
@@ -32,19 +35,44 @@ func main() {
 
 		case "ucinewgame":
 			pos = engine.StartPos()
+			history = []uint64{pos.Hash()}
 
 		case "position":
-			pos = handlePosition(fields)
+			pos, history = handlePosition(fields)
 
 		case "go":
 			timeLimit := computeTimeLimit(fields, pos.SideToMove)
-			move, nodes, depth := engine.SearchTimed(*pos, timeLimit)
-			fmt.Printf("info depth %d nodes %d\n", depth, nodes)
+			move, nodes, depth, bestScore := engine.SearchTimed(*pos, timeLimit, history)
+			fmt.Printf("info depth %d nodes %d %s\n", depth, nodes, formatScore(bestScore))
 			fmt.Println("bestmove", move.UCI())
 		case "quit":
 			return
 		}
 	}
+}
+
+// formatScore formats a search score in UCI notation: "score mate N" if the
+// score represents a forced mate (N full moves away, negative if we're the
+// one getting mated), otherwise "score cp X" (centipawns).
+func formatScore(score int) string {
+	absScore := score
+	if absScore < 0 {
+		absScore = -absScore
+	}
+
+	if absScore >= engine.MateValue-1000 {
+		matePlies := absScore - engine.MateValue
+		if matePlies < 0 {
+			matePlies = 0
+		}
+		mateMoves := matePlies/2 + 1
+		if score < 0 {
+			mateMoves = -mateMoves
+		}
+		return fmt.Sprintf("score mate %d", mateMoves)
+	}
+
+	return fmt.Sprintf("score cp %d", score)
 }
 
 // computeTimeLimit works out how long to search for from a "go" command's
@@ -100,8 +128,9 @@ func computeTimeLimit(fields []string, sideToMove engine.Color) time.Duration {
 
 // handlePosition parses a "position [startpos | fen <fen>]
 // [moves ...]" command.
-func handlePosition(fileds []string) *engine.Position {
+func handlePosition(fileds []string) (*engine.Position, []uint64) {
 	pos := engine.StartPos()
+	history := []uint64{pos.Hash()}
 
 	movesIndex := -1
 	for i, f := range fileds {
@@ -114,8 +143,9 @@ func handlePosition(fileds []string) *engine.Position {
 	if movesIndex != -1 {
 		for _, uci := range fileds[movesIndex+1:] {
 			pos.MakeMove(engine.ParseUCIMove(uci))
+			history = append(history, pos.Hash())
 		}
 	}
 
-	return pos
+	return pos, history
 }

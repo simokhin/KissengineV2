@@ -18,10 +18,11 @@ func TestNegamaxMate(t *testing.T) {
 
 	pos.MakeMove(NewMove(B1, B8))
 
-	alpha := Maximum
-	beta := Minimum
+	alpha := Minimum
+	beta := Maximum
+	history := []uint64{pos.Hash()}
 
-	score := Negamax(context.Background(), pos, 1, &nodes, alpha, beta)
+	score := Negamax(context.Background(), pos, 1, &nodes, alpha, beta, history)
 	t.Logf("negamax score for black (mated): %d", score)
 	if score > -MateValue {
 		t.Fatalf("want %d, get %d", -MateValue, score)

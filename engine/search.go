@@ -14,13 +14,29 @@ const (
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
 // and returns the score from the perspective of the side to move.
-func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha, beta int) int {
+func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha, beta int, history []uint64) int {
 	*nodes++
 
 	select {
 	case <-ctx.Done():
 		return 0
 	default:
+	}
+
+	// Check for a draw by threefold repetition.
+	count := 0
+	for _, h := range history {
+		if h == pos.Hash() {
+			count++
+		}
+	}
+	if count >= 3 {
+		return 0
+	}
+
+	// Check FiftyMovesRule
+	if pos.FiftyMovesRule >= 100 {
+		return 0
 	}
 
 	// Check position in the transpositional table
@@ -67,7 +83,10 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 	for _, move := range moves {
 		newPos := pos
 		newPos.MakeMove(move)
-		nextEval := -Negamax(ctx, newPos, depth-1, nodes, -beta, -alpha)
+
+		newHistory := append(history, newPos.Hash()) // Save new position's hash to history
+
+		nextEval := -Negamax(ctx, newPos, depth-1, nodes, -beta, -alpha, newHistory)
 		if nextEval >= beta {
 
 			// Store position in tTable
@@ -169,7 +188,7 @@ func Quiescence(ctx context.Context, pos Position, nodes *uint64, alpha, beta in
 }
 
 // BestMove returns the best move found by a fixed-depth negamax search.
-func BestMove(ctx context.Context, pos Position, depth int) (Move, uint64) {
+func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (Move, uint64, int) {
 	var nodes uint64
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
@@ -187,14 +206,14 @@ func BestMove(ctx context.Context, pos Position, depth int) (Move, uint64) {
 	for _, move := range moves {
 		newPos := pos
 		newPos.MakeMove(move)
-		score := -Negamax(ctx, newPos, depth-1, &nodes, -beta, -alpha)
+		score := -Negamax(ctx, newPos, depth-1, &nodes, -beta, -alpha, history)
 		if score > bestScore {
 			bestScore = score
 			bestMove = move
 		}
 	}
 
-	return bestMove, nodes
+	return bestMove, nodes, bestScore
 }
 
 // SearchTimed performs iterative deepening negamax search, returning
@@ -204,12 +223,13 @@ func BestMove(ctx context.Context, pos Position, depth int) (Move, uint64) {
 // depths only overwrite it once they finish completely -- a depth cut short
 // by the time limit is discarded rather than allowed to replace a good,
 // fully-searched result with a worse, half-searched one.
-func SearchTimed(pos Position, timeLimit time.Duration) (Move, uint64, int) {
+func SearchTimed(pos Position, timeLimit time.Duration, history []uint64) (Move, uint64, int, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeLimit)
 	defer cancel()
 
 	var completedDepth int
-	bestMove, totalNodes := BestMove(ctx, pos, 1)
+
+	bestMove, totalNodes, bestScore := BestMove(ctx, pos, 1, history)
 	if ctx.Err() == nil {
 		completedDepth = 1
 	}
@@ -219,7 +239,7 @@ func SearchTimed(pos Position, timeLimit time.Duration) (Move, uint64, int) {
 			break
 		}
 
-		move, nodes := BestMove(ctx, pos, depth)
+		move, nodes, score := BestMove(ctx, pos, depth, history)
 		totalNodes += nodes
 
 		if ctx.Err() != nil {
@@ -227,10 +247,11 @@ func SearchTimed(pos Position, timeLimit time.Duration) (Move, uint64, int) {
 		}
 
 		bestMove = move
+		bestScore = score
 		completedDepth = depth
 	}
 
-	return bestMove, totalNodes, completedDepth
+	return bestMove, totalNodes, completedDepth, bestScore
 }
 
 // moveScore returns a priority score for move ordering: captures
