@@ -20,7 +20,7 @@ type SearchState struct {
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
 // and returns the score from the perspective of the side to move.
-func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, history []uint64, nullMove bool) int {
+func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, history []uint64, nullMove bool, extensions int) int {
 	s.nodes++
 
 	select {
@@ -78,7 +78,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 		oldEnPassantSquare := pos.MakeNullMove()
 
-		nullScore := -s.Negamax(pos, depth-1-R, ply+1, -beta, -beta+1, history, true)
+		nullScore := -s.Negamax(pos, depth-1-R, ply+1, -beta, -beta+1, history, true, extensions)
 
 		pos.UnmakeNullMove(oldEnPassantSquare)
 
@@ -106,10 +106,30 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	var bestMove Move
 	var flag TTFlag
 
-	for _, move := range moves {
+	for i, move := range moves {
 		undo := pos.MakeMove(move)
 		newHistory := append(history, pos.Hash()) // Save new position's hash to history
-		nextEval := -s.Negamax(pos, depth-1, ply+1, -beta, -alpha, newHistory, false)
+
+		search := func(a, b int) int {
+			// Check extension
+			if pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && extensions < 16 {
+				return -s.Negamax(pos, depth, ply+1, a, b, newHistory, false, extensions+1)
+			}
+
+			return -s.Negamax(pos, depth-1, ply+1, a, b, newHistory, false, extensions)
+		}
+
+		// Principal Variation Search
+		var nextEval int
+		if i == 0 {
+			nextEval = search(-beta, -alpha)
+		} else {
+			nextEval = search(-alpha-1, -alpha)
+			if nextEval > alpha && beta-alpha > 1 {
+				nextEval = search(-beta, -alpha)
+			}
+		}
+
 		pos.UnmakeMove(move, undo)
 
 		if nextEval >= beta {
@@ -224,6 +244,13 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (M
 	s := &SearchState{ctx: ctx}
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
+	if len(moves) == 0 {
+		if pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
+			return Move(0), 0, -(MateValue + depth)
+		}
+		return Move(0), 0, 0
+	}
+
 	hash := pos.Hash()
 	entry, _ := ttProbe(hash)
 
@@ -243,7 +270,7 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (M
 
 		newHistory := append(history, pos.Hash())
 
-		score := -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false)
+		score := -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
 
 		pos.UnmakeMove(move, undo)
 
