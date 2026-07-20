@@ -20,7 +20,7 @@ type SearchState struct {
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
 // and returns the score from the perspective of the side to move.
-func (s *SearchState) Negamax(pos Position, depth, ply int, alpha, beta int, history []uint64, nullMove bool) int {
+func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, history []uint64, nullMove bool) int {
 	s.nodes++
 
 	select {
@@ -73,21 +73,25 @@ func (s *SearchState) Negamax(pos Position, depth, ply int, alpha, beta int, his
 	}
 
 	// Null move logic
-	if !nullMove && depth >= 4 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && hasNonPawnMaterial(pos, pos.SideToMove) {
+	if !nullMove && depth >= 4 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && hasNonPawnMaterial(*pos, pos.SideToMove) {
 		R := 3
-		nullPos := pos
-		nullPos.MakeNullMove()
-		nullScore := -s.Negamax(nullPos, depth-1-R, ply+1, -beta, -beta+1, history, true)
+
+		oldEnPassantSquare := pos.MakeNullMove()
+
+		nullScore := -s.Negamax(pos, depth-1-R, ply+1, -beta, -beta+1, history, true)
+
+		pos.UnmakeNullMove(oldEnPassantSquare)
+
 		if nullScore >= beta {
 			return beta
 		}
 	}
 
-	moves := GenerateLegalMoves(pos, pos.SideToMove)
+	moves := GenerateLegalMoves(*pos, pos.SideToMove)
 
-	// Order moves (captures => killers => others)
+	// Order moves (ttMove => captures => killers => others)
 	slices.SortFunc(moves, func(a, b Move) int {
-		return s.orderScore(pos, ply, b) - s.orderScore(pos, ply, a)
+		return s.orderScore(*pos, ply, b, entry.bestMove) - s.orderScore(*pos, ply, a, entry.bestMove)
 	})
 
 	// Check Mate/Stalemate
@@ -103,16 +107,15 @@ func (s *SearchState) Negamax(pos Position, depth, ply int, alpha, beta int, his
 	var flag TTFlag
 
 	for _, move := range moves {
-		newPos := pos
-		newPos.MakeMove(move)
+		undo := pos.MakeMove(move)
+		newHistory := append(history, pos.Hash()) // Save new position's hash to history
+		nextEval := -s.Negamax(pos, depth-1, ply+1, -beta, -alpha, newHistory, false)
+		pos.UnmakeMove(move, undo)
 
-		newHistory := append(history, newPos.Hash()) // Save new position's hash to history
-
-		nextEval := -s.Negamax(newPos, depth-1, ply+1, -beta, -alpha, newHistory, false)
 		if nextEval >= beta {
 
 			// Store killer moves
-			if !isCapture(pos, move) && s.killers[ply][0] != move {
+			if !isCapture(*pos, move) && s.killers[ply][0] != move {
 				s.storeKiller(ply, move)
 			}
 
@@ -144,7 +147,7 @@ func (s *SearchState) Negamax(pos Position, depth, ply int, alpha, beta int, his
 // (or, if in check, all legal moves), continuing until the position becomes "quiet".
 // This avoids the horizon effect, where a fixed-depth search stops mid-exchange and
 // misjudges the position.
-func Quiescence(ctx context.Context, pos Position, nodes *uint64, alpha, beta int) int {
+func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta int) int {
 	*nodes++
 
 	// Check if we have time
@@ -161,7 +164,7 @@ func Quiescence(ctx context.Context, pos Position, nodes *uint64, alpha, beta in
 	isCheck := pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1)
 	if isCheck {
 		// Generate moves as usual
-		moves = GenerateLegalMoves(pos, pos.SideToMove)
+		moves = GenerateLegalMoves(*pos, pos.SideToMove)
 
 		// Check if Mate
 		if len(moves) == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
@@ -169,12 +172,12 @@ func Quiescence(ctx context.Context, pos Position, nodes *uint64, alpha, beta in
 		}
 
 	} else {
-		unsortedMoves := GenerateLegalMoves(pos, pos.SideToMove)
+		unsortedMoves := GenerateLegalMoves(*pos, pos.SideToMove)
 
 		if pos.SideToMove == White {
-			standPat = Evaluate(pos)
+			standPat = Evaluate(*pos)
 		} else {
-			standPat = -Evaluate(pos)
+			standPat = -Evaluate(*pos)
 		}
 
 		if standPat >= beta {
@@ -185,7 +188,7 @@ func Quiescence(ctx context.Context, pos Position, nodes *uint64, alpha, beta in
 
 		// Take only capture moves
 		for _, move := range unsortedMoves {
-			if isCapture(pos, move) {
+			if isCapture(*pos, move) {
 				moves = append(moves, move)
 			} else {
 				continue
@@ -195,14 +198,16 @@ func Quiescence(ctx context.Context, pos Position, nodes *uint64, alpha, beta in
 
 	// MVV-LVA
 	slices.SortFunc(moves, func(a, b Move) int {
-		return moveScore(pos, b) - moveScore(pos, a)
+		return moveScore(*pos, b) - moveScore(*pos, a)
 	})
 
 	for _, move := range moves {
-		newPos := pos
-		newPos.MakeMove(move)
+		undo := pos.MakeMove(move)
 
-		nextEval := -Quiescence(ctx, newPos, nodes, -beta, -alpha)
+		nextEval := -Quiescence(ctx, pos, nodes, -beta, -alpha)
+
+		pos.UnmakeMove(move, undo)
+
 		if nextEval >= beta {
 			return beta
 		}
@@ -219,9 +224,12 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (M
 	s := &SearchState{ctx: ctx}
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
-	// MVV-LVA
+	hash := pos.Hash()
+	entry, _ := ttProbe(hash)
+
+	// Ordering move ttMove => Captures => Others
 	slices.SortFunc(moves, func(a, b Move) int {
-		return moveScore(pos, b) - moveScore(pos, a)
+		return s.orderScore(pos, 0, b, entry.bestMove) - s.orderScore(pos, 0, a, entry.bestMove)
 	})
 
 	bestMove := moves[0]
@@ -231,12 +239,14 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (M
 	beta := Maximum
 
 	for _, move := range moves {
-		newPos := pos
-		newPos.MakeMove(move)
+		undo := pos.MakeMove(move)
 
-		newHistory := append(history, newPos.Hash())
+		newHistory := append(history, pos.Hash())
 
-		score := -s.Negamax(newPos, depth-1, 1, -beta, -alpha, newHistory, false)
+		score := -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false)
+
+		pos.UnmakeMove(move, undo)
+
 		if score > bestScore {
 			bestScore = score
 			bestMove = move
@@ -331,9 +341,18 @@ func SearchDepth(pos Position, maxDepth int, history []uint64) (Move, uint64, in
 	return bestMove, totalNodes, completedDepth, bestScore
 }
 
-func (p *Position) MakeNullMove() {
+func (p *Position) MakeNullMove() Square {
 	p.SideToMove ^= 1
+
+	oldEnPassant := p.EnPassant
 	p.EnPassant = NoSquare
+
+	return oldEnPassant
+}
+
+func (p *Position) UnmakeNullMove(oldEnPassant Square) {
+	p.SideToMove ^= 1
+	p.EnPassant = oldEnPassant
 }
 
 func hasNonPawnMaterial(pos Position, color Color) bool {
@@ -349,7 +368,11 @@ func (s *SearchState) storeKiller(ply int, move Move) {
 	s.killers[ply][0] = move
 }
 
-func (s *SearchState) orderScore(pos Position, ply int, m Move) int {
+func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int {
+	if m == ttMove {
+		return 1_000_000
+	}
+
 	score := moveScore(pos, m)
 
 	if ply >= len(s.killers) {

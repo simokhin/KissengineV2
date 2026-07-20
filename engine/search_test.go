@@ -23,7 +23,7 @@ func TestNegamaxMate(t *testing.T) {
 	alpha := Minimum
 	beta := Maximum
 
-	score := s.Negamax(pos, 1, 1, alpha, beta, history, false)
+	score := s.Negamax(&pos, 1, 1, alpha, beta, history, false)
 	t.Logf("negamax score for black (mated): %d", score)
 	if score > -MateValue {
 		t.Fatalf("want %d, get %d", -MateValue, score)

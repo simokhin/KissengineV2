@@ -68,10 +68,7 @@ func formatScore(score int) string {
 	}
 
 	if absScore >= engine.MateValue-1000 {
-		matePlies := absScore - engine.MateValue
-		if matePlies < 0 {
-			matePlies = 0
-		}
+		matePlies := max(absScore-engine.MateValue, 0)
 		mateMoves := matePlies/2 + 1
 		if score < 0 {
 			mateMoves = -mateMoves

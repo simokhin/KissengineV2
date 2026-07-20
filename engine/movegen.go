@@ -99,12 +99,12 @@ func GenerateLegalMoves(pos Position, color Color) []Move {
 	var legalmoves []Move
 
 	for _, m := range pseudoLMoves {
-		newPos := pos
-		newPos.MakeMove(m)
-		kingSqure := newPos.KingSquare(color)
-		if !newPos.IsAttacked(kingSqure, color^1) {
+		undo := pos.MakeMove(m)
+		kingSqure := pos.KingSquare(color)
+		if !pos.IsAttacked(kingSqure, color^1) {
 			legalmoves = append(legalmoves, m)
 		}
+		pos.UnmakeMove(m, undo)
 	}
 
 	return legalmoves
