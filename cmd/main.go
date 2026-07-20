@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"kissengine-bitboard/engine"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -35,14 +37,65 @@ func main() {
 			pos = handlePosition(fields)
 
 		case "go":
-			move, nodes := engine.BestMove(*pos, 4)
-			fmt.Printf("info depth 4 nodes %d\n", nodes)
+			timeLimit := computeTimeLimit(fields, pos.SideToMove)
+			move, nodes := engine.SearchTimed(*pos, timeLimit)
+			fmt.Printf("info nodes %d\n", nodes)
 			fmt.Println("bestmove", move.UCI())
-
 		case "quit":
 			return
 		}
 	}
+}
+
+// computeTimeLimit works out how long to search for from a "go" command's
+// fields, handling both a fixed "movetime" and clock-based "wtime"/"btime"
+// (with optional "winc"/"binc") time controls. Falls back to one second if
+// neither is present.
+func computeTimeLimit(fields []string, sideToMove engine.Color) time.Duration {
+	var movetime, wtime, btime, winc, binc int
+
+	for i, f := range fields {
+		if i+1 >= len(fields) {
+			continue
+		}
+		value, err := strconv.Atoi(fields[i+1])
+		if err != nil {
+			continue
+		}
+
+		switch f {
+		case "movetime":
+			movetime = value
+		case "wtime":
+			wtime = value
+		case "btime":
+			btime = value
+		case "winc":
+			winc = value
+		case "binc":
+			binc = value
+		}
+	}
+
+	if movetime > 0 {
+		return time.Duration(movetime) * time.Millisecond
+	}
+
+	if wtime > 0 || btime > 0 {
+		myTime, myInc := wtime, winc
+		if sideToMove == engine.Black {
+			myTime, myInc = btime, binc
+		}
+
+		budget := myTime/30 + myInc
+		if budget < 50 {
+			budget = 50
+		}
+
+		return time.Duration(budget) * time.Millisecond
+	}
+
+	return time.Second
 }
 
 // handlePosition parses a "position [startpos | fen <fen>]

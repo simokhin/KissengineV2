@@ -1,6 +1,9 @@
 package engine
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestNegamaxMate(t *testing.T) {
 	var nodes uint64
@@ -15,7 +18,7 @@ func TestNegamaxMate(t *testing.T) {
 
 	pos.MakeMove(NewMove(B1, B8))
 
-	score := Negamax(pos, 1, &nodes)
+	score := Negamax(context.Background(), pos, 1, &nodes)
 	t.Logf("negamax score for black (mated): %d", score)
 	if score > -MateValue {
 		t.Fatalf("want %d, get %d", -MateValue, score)

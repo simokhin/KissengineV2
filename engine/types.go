@@ -131,8 +131,11 @@ var FileA Bitboard
 // FileH is a bitboard with all squares of the h-file set.
 var FileH Bitboard
 
-// init populates the Rank1, Rank3, Rank6, Rank8, FileA, FileH masks.
-func init() {
+// initRankFileMasks populates the Rank1, Rank3, Rank6, Rank8, FileA, FileH
+// masks. Called explicitly (not as its own init()) so callers that need
+// these masks during their own init() can control the ordering instead of
+// relying on Go's alphabetical-by-filename init() order across files.
+func initRankFileMasks() {
 	Rank1 = rankMask(A1)
 	Rank3 = rankMask(A3)
 	Rank6 = rankMask(A6)
@@ -140,4 +143,8 @@ func init() {
 
 	FileA = fileMask(A1)
 	FileH = fileMask(H1)
+}
+
+func init() {
+	initRankFileMasks()
 }

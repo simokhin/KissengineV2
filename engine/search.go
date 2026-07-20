@@ -1,6 +1,10 @@
 package engine
 
-import "math"
+import (
+	"context"
+	"math"
+	"time"
+)
 
 const (
 	MateValue = 100000
@@ -9,8 +13,14 @@ const (
 
 // Negamax performs a fixed-depth negamax search and returns the score
 // from the perspective of the side to move.
-func Negamax(pos Position, depth int, nodes *uint64) int {
+func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64) int {
 	*nodes++
+
+	select {
+	case <-ctx.Done():
+		return 0
+	default:
+	}
 
 	if depth == 0 {
 		if pos.SideToMove == White {
@@ -31,7 +41,7 @@ func Negamax(pos Position, depth int, nodes *uint64) int {
 	for _, move := range moves {
 		newPos := pos
 		newPos.MakeMove(move)
-		nextEval := -Negamax(newPos, depth-1, nodes)
+		nextEval := -Negamax(ctx, newPos, depth-1, nodes)
 		if nextEval > eval {
 			eval = nextEval
 		}
@@ -41,7 +51,7 @@ func Negamax(pos Position, depth int, nodes *uint64) int {
 }
 
 // BestMove returns the best move found by a fixed-depth negamax search.
-func BestMove(pos Position, depth int) (Move, uint64) {
+func BestMove(ctx context.Context, pos Position, depth int) (Move, uint64) {
 	var nodes uint64
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
@@ -51,7 +61,7 @@ func BestMove(pos Position, depth int) (Move, uint64) {
 	for _, move := range moves {
 		newPos := pos
 		newPos.MakeMove(move)
-		score := -Negamax(newPos, depth-1, &nodes)
+		score := -Negamax(ctx, newPos, depth-1, &nodes)
 		if score > bestScore {
 			bestScore = score
 			bestMove = move
@@ -59,4 +69,24 @@ func BestMove(pos Position, depth int) (Move, uint64) {
 	}
 
 	return bestMove, nodes
+}
+
+func SearchTimed(pos Position, timeLimit time.Duration) (Move, uint64) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeLimit)
+	defer cancel()
+
+	var bestMove Move
+	var totalNodes uint64
+
+	for depth := 1; ; depth++ {
+		move, nodes := BestMove(ctx, pos, depth)
+		totalNodes += nodes
+		if ctx.Err() != nil {
+			break
+		} else {
+			bestMove = move
+		}
+	}
+
+	return bestMove, totalNodes
 }

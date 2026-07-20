@@ -55,11 +55,10 @@ func bishopAttacksMagic(s Square, occupied Bitboard) Bitboard {
 	return e.attacks[index]
 }
 
-// buildMagicEntry finds a magic number for square s and builds its
-// attack lookup table.
-func buildMagicEntry(s Square, mask Bitboard, sliderAttacks func(Square, Bitboard) Bitboard) magicEntry {
+// buildMagicEntry builds the attack lookup table for square s using the
+// given precomputed magic number.
+func buildMagicEntry(s Square, mask Bitboard, magic uint64, sliderAttacks func(Square, Bitboard) Bitboard) magicEntry {
 	bits := mask.PopCount()
-	magic := findMagic(s, mask, sliderAttacks)
 	shift := uint(64 - bits)
 
 	attacks := make([]Bitboard, 1<<bits)
@@ -104,11 +103,13 @@ func findMagic(s Square, mask Bitboard, sliderAttacks func(Square, Bitboard) Bit
 	}
 }
 
-// init finds magic numbers and builds the attack lookup
-// tables for all 64 squares.
+// init builds the attack lookup tables for all 64 squares using the
+// precomputed magic numbers.
 func init() {
+	initRankFileMasks()
+
 	for s := A1; s <= H8; s++ {
-		rookMagics[s] = buildMagicEntry(s, rookRelevantMask(s), rookAttacks)
-		bishopMagics[s] = buildMagicEntry(s, bishopRelevantMask(s), bishopAttacks)
+		rookMagics[s] = buildMagicEntry(s, rookRelevantMask(s), RookMagicNumbers[s], rookAttacks)
+		bishopMagics[s] = buildMagicEntry(s, bishopRelevantMask(s), BishopMagicNumbers[s], bishopAttacks)
 	}
 }
