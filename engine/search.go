@@ -165,7 +165,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		if nextEval >= beta {
 
 			// Store killer moves
-			if !isCapture(*pos, move) && s.killers[ply][0] != move {
+			if !isCapture(*pos, move) && (ply >= len(s.killers) || s.killers[ply][0] != move) {
 				s.storeKiller(ply, move)
 
 				// History heuristic
@@ -477,6 +477,10 @@ func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int
 }
 
 func (s *SearchState) canReduce(pos Position, move Move, depth, i, ply int) bool {
+	if ply >= len(s.killers) {
+		return depth >= 3 && i >= 4 && !isCapture(pos, move) && !move.IsPromotion()
+	}
+
 	if depth >= 3 && i >= 4 && !isCapture(pos, move) && !move.IsPromotion() && move != s.killers[ply][0] && move != s.killers[ply][1] {
 		return true
 	}

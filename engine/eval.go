@@ -2,6 +2,13 @@ package engine
 
 const totalPhase = 24
 
+const (
+	knightMobilityBonus = 4
+	bishopMobilityBonus = 3
+	rookMobilityBonus   = 2
+	queenMobilityBonus  = 1
+)
+
 var pieceValues = [7]int{
 	Pawn:   100,
 	Knight: 320,
@@ -40,26 +47,56 @@ func Evaluate(pos Position) int {
 		for whitePieces != 0 {
 			sq := whitePieces.PopLSB()
 
-			// Change PST for King in the endgame
+			// Add PST value for all pieces
 			pstValue := pst[pt][sq^56]
+
+			// Change PST for King in the endgame
 			if pt == King {
 				pstValue = (pst[King][sq^56]*phase + kingEndgamePST[sq^56]*(totalPhase-phase)) / totalPhase
 			}
 
-			eval += pieceValues[pt] + pstValue
+			// Mobility bonus
+			mobilityBonus := 0
+			switch pt {
+			case Knight:
+				mobilityBonus = (KnightAttacks[sq] &^ pos.Colors[White]).PopCount() * knightMobilityBonus
+			case Bishop:
+				mobilityBonus = (bishopAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[White]).PopCount() * bishopMobilityBonus
+			case Rook:
+				mobilityBonus = (rookAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[White]).PopCount() * rookMobilityBonus
+			case Queen:
+				mobilityBonus = (queenAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[White]).PopCount() * queenMobilityBonus
+			}
+
+			eval += pieceValues[pt] + pstValue + mobilityBonus
 		}
 
 		blackPieces := pos.Pieces[pt] & pos.Colors[Black]
 		for blackPieces != 0 {
 			sq := blackPieces.PopLSB()
 
-			// Change PST for King in the endgame
+			// Add PST value for all pieces
 			pstValue := pst[pt][sq]
+
+			// Change PST for King in the endgame
 			if pt == King {
 				pstValue = (pst[King][sq]*phase + kingEndgamePST[sq]*(totalPhase-phase)) / totalPhase
 			}
 
-			eval -= pieceValues[pt] + pstValue
+			// Mobility bonus
+			mobilityBonus := 0
+			switch pt {
+			case Knight:
+				mobilityBonus = (KnightAttacks[sq] &^ pos.Colors[Black]).PopCount() * knightMobilityBonus
+			case Bishop:
+				mobilityBonus = (bishopAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[Black]).PopCount() * bishopMobilityBonus
+			case Rook:
+				mobilityBonus = (rookAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[Black]).PopCount() * rookMobilityBonus
+			case Queen:
+				mobilityBonus = (queenAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[Black]).PopCount() * queenMobilityBonus
+			}
+
+			eval -= pieceValues[pt] + pstValue + mobilityBonus
 		}
 	}
 
