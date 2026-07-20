@@ -111,23 +111,36 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		undo := pos.MakeMove(move)
 		newHistory := append(history, pos.Hash()) // Save new position's hash to history
 
-		search := func(a, b int) int {
+		search := func(a, b int, reduced bool) int {
 			// Check extension
 			if pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && extensions < 16 {
 				return -s.Negamax(pos, depth, ply+1, a, b, newHistory, false, extensions+1)
 			}
 
-			return -s.Negamax(pos, depth-1, ply+1, a, b, newHistory, false, extensions)
+			newDepth := depth - 1
+			if reduced {
+				newDepth--
+			}
+
+			return -s.Negamax(pos, newDepth, ply+1, a, b, newHistory, false, extensions)
 		}
+
+		// LMR
+		canReduce := i > 0 && s.canReduce(*pos, move, depth, i, ply)
 
 		// Principal Variation Search
 		var nextEval int
 		if i == 0 {
-			nextEval = search(-beta, -alpha)
+			nextEval = search(-beta, -alpha, false)
 		} else {
-			nextEval = search(-alpha-1, -alpha)
+			nextEval = search(-alpha-1, -alpha, canReduce)
+
+			if canReduce && nextEval > alpha {
+				nextEval = search(-alpha-1, -alpha, false)
+			}
+
 			if nextEval > alpha && beta-alpha > 1 {
-				nextEval = search(-beta, -alpha)
+				nextEval = search(-beta, -alpha, false)
 			}
 		}
 
@@ -423,4 +436,12 @@ func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int
 	}
 
 	return score
+}
+
+func (s *SearchState) canReduce(pos Position, move Move, depth, i, ply int) bool {
+	if depth >= 3 && i >= 4 && !isCapture(pos, move) && !move.IsPromotion() && move != s.killers[ply][0] && move != s.killers[ply][1] {
+		return true
+	}
+
+	return false
 }
