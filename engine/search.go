@@ -23,6 +23,24 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 	default:
 	}
 
+	// Check position in the transpositional table
+	hash := pos.Hash()
+	entry, found := ttProbe(hash)
+	if found && entry.depth >= depth {
+		switch entry.flag {
+		case Exact:
+			return entry.score
+		case LowerBound:
+			if entry.score >= beta {
+				return beta
+			}
+		case UpperBound:
+			if entry.score <= alpha {
+				return alpha
+			}
+		}
+	}
+
 	if depth == 0 {
 		return Quiescence(ctx, pos, nodes, alpha, beta)
 	}
@@ -41,17 +59,37 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 		return 0
 	}
 
+	// Variables for creating ttEntry
+	var currentAlpha = alpha
+	var bestMove Move
+	var flag TTFlag
+
 	for _, move := range moves {
 		newPos := pos
 		newPos.MakeMove(move)
 		nextEval := -Negamax(ctx, newPos, depth-1, nodes, -beta, -alpha)
 		if nextEval >= beta {
+
+			// Store position in tTable
+			flag = LowerBound
+			ttStore(hash, depth, beta, LowerBound, move)
+
 			return beta
 		}
 		if nextEval > alpha {
+			bestMove = move
 			alpha = nextEval
 		}
 	}
+
+	if alpha > currentAlpha {
+		flag = Exact
+	} else if alpha == currentAlpha {
+		flag = UpperBound
+	}
+
+	// Store position in tTable
+	ttStore(hash, depth, alpha, flag, bestMove)
 
 	return alpha
 }
