@@ -12,20 +12,26 @@ const (
 	Maximum   = MateValue + 1
 )
 
+type SearchState struct {
+	ctx     context.Context
+	nodes   uint64
+	killers [64][2]Move
+}
+
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
 // and returns the score from the perspective of the side to move.
-func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha, beta int, history []uint64, nullMove bool) int {
-	*nodes++
+func (s *SearchState) Negamax(pos Position, depth, ply int, alpha, beta int, history []uint64, nullMove bool) int {
+	s.nodes++
 
 	select {
-	case <-ctx.Done():
+	case <-s.ctx.Done():
 		return 0
 	default:
 	}
 
 	hash := pos.Hash()
 
-	// Get last history
+	// Take last moves from history
 	start := len(history) - 1 - pos.FiftyMovesRule
 	lastHistory := history[start:]
 
@@ -63,7 +69,7 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 	}
 
 	if depth == 0 {
-		return Quiescence(ctx, pos, nodes, alpha, beta)
+		return Quiescence(s.ctx, pos, &s.nodes, alpha, beta)
 	}
 
 	// Null move logic
@@ -71,7 +77,7 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 		R := 3
 		nullPos := pos
 		nullPos.MakeNullMove()
-		nullScore := -Negamax(ctx, nullPos, depth-1-R, nodes, -beta, -beta+1, history, true)
+		nullScore := -s.Negamax(nullPos, depth-1-R, ply+1, -beta, -beta+1, history, true)
 		if nullScore >= beta {
 			return beta
 		}
@@ -79,9 +85,9 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
-	// MVV-LVA
+	// Order moves (captures => killers => others)
 	slices.SortFunc(moves, func(a, b Move) int {
-		return moveScore(pos, b) - moveScore(pos, a)
+		return s.orderScore(pos, ply, b) - s.orderScore(pos, ply, a)
 	})
 
 	// Check Mate/Stalemate
@@ -102,8 +108,13 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 
 		newHistory := append(history, newPos.Hash()) // Save new position's hash to history
 
-		nextEval := -Negamax(ctx, newPos, depth-1, nodes, -beta, -alpha, newHistory, false)
+		nextEval := -s.Negamax(newPos, depth-1, ply+1, -beta, -alpha, newHistory, false)
 		if nextEval >= beta {
+
+			// Store killer moves
+			if !isCapture(pos, move) && s.killers[ply][0] != move {
+				s.storeKiller(ply, move)
+			}
 
 			// Store position in tTable
 			flag = LowerBound
@@ -205,7 +216,7 @@ func Quiescence(ctx context.Context, pos Position, nodes *uint64, alpha, beta in
 
 // BestMove returns the best move found by a fixed-depth negamax search.
 func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (Move, uint64, int) {
-	var nodes uint64
+	s := &SearchState{ctx: ctx}
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
 	// MVV-LVA
@@ -225,14 +236,14 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (M
 
 		newHistory := append(history, newPos.Hash())
 
-		score := -Negamax(ctx, newPos, depth-1, &nodes, -beta, -alpha, newHistory, false)
+		score := -s.Negamax(newPos, depth-1, 1, -beta, -alpha, newHistory, false)
 		if score > bestScore {
 			bestScore = score
 			bestMove = move
 		}
 	}
 
-	return bestMove, nodes, bestScore
+	return bestMove, s.nodes, bestScore
 }
 
 // SearchTimed performs iterative deepening negamax search, returning
@@ -327,4 +338,32 @@ func (p *Position) MakeNullMove() {
 
 func hasNonPawnMaterial(pos Position, color Color) bool {
 	return (pos.Pieces[Knight]|pos.Pieces[Bishop]|pos.Pieces[Rook]|pos.Pieces[Queen])&pos.Colors[color] != 0
+}
+
+func (s *SearchState) storeKiller(ply int, move Move) {
+	if ply >= len(s.killers) {
+		return
+	}
+
+	s.killers[ply][1] = s.killers[ply][0]
+	s.killers[ply][0] = move
+}
+
+func (s *SearchState) orderScore(pos Position, ply int, m Move) int {
+	score := moveScore(pos, m)
+
+	if ply >= len(s.killers) {
+		return score
+	}
+
+	if !isCapture(pos, m) {
+		switch m {
+		case s.killers[ply][0]:
+			score += 50
+		case s.killers[ply][1]:
+			score += 40
+		}
+	}
+
+	return score
 }

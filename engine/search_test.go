@@ -6,7 +6,7 @@ import (
 )
 
 func TestNegamaxMate(t *testing.T) {
-	var nodes uint64
+	s := &SearchState{ctx: context.Background()}
 
 	pos := Position{}
 	pos.PutPiece(H8, Black, King)
@@ -23,7 +23,7 @@ func TestNegamaxMate(t *testing.T) {
 	alpha := Minimum
 	beta := Maximum
 
-	score := Negamax(context.Background(), pos, 1, &nodes, alpha, beta, history, false)
+	score := s.Negamax(pos, 1, 1, alpha, beta, history, false)
 	t.Logf("negamax score for black (mated): %d", score)
 	if score > -MateValue {
 		t.Fatalf("want %d, get %d", -MateValue, score)
