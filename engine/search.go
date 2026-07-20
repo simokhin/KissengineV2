@@ -23,10 +23,16 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 	default:
 	}
 
+	hash := pos.Hash()
+
+	// Get last history
+	start := len(history) - 1 - pos.FiftyMovesRule
+	lastHistory := history[start:]
+
 	// Check for a draw by threefold repetition.
 	count := 0
-	for _, h := range history {
-		if h == pos.Hash() {
+	for _, h := range lastHistory {
+		if h == hash {
 			count++
 		}
 	}
@@ -40,7 +46,6 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 	}
 
 	// Check position in the transpositional table
-	hash := pos.Hash()
 	entry, found := ttProbe(hash)
 	if found && entry.depth >= depth {
 		switch entry.flag {
@@ -217,7 +222,10 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (M
 	for _, move := range moves {
 		newPos := pos
 		newPos.MakeMove(move)
-		score := -Negamax(ctx, newPos, depth-1, &nodes, -beta, -alpha, history, false)
+
+		newHistory := append(history, newPos.Hash())
+
+		score := -Negamax(ctx, newPos, depth-1, &nodes, -beta, -alpha, newHistory, false)
 		if score > bestScore {
 			bestScore = score
 			bestMove = move

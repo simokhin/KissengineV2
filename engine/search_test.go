@@ -16,11 +16,12 @@ func TestNegamaxMate(t *testing.T) {
 	pos.PutPiece(B1, White, Rook)
 	pos.SideToMove = White
 
+	history := []uint64{pos.Hash()}
 	pos.MakeMove(NewMove(B1, B8))
+	history = append(history, pos.Hash())
 
 	alpha := Minimum
 	beta := Maximum
-	history := []uint64{pos.Hash()}
 
 	score := Negamax(context.Background(), pos, 1, &nodes, alpha, beta, history, false)
 	t.Logf("negamax score for black (mated): %d", score)
