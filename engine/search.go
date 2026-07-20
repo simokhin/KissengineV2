@@ -24,11 +24,7 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 	}
 
 	if depth == 0 {
-		if pos.SideToMove == White {
-			return Evaluate(pos)
-		} else {
-			return -Evaluate(pos)
-		}
+		return Quiescence(ctx, pos, nodes, alpha, beta)
 	}
 
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
@@ -38,6 +34,7 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 		return moveScore(pos, b) - moveScore(pos, a)
 	})
 
+	// Check Mate/Stalemate
 	if len(moves) == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
 		return -(MateValue + depth)
 	} else if len(moves) == 0 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
@@ -48,6 +45,80 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 		newPos := pos
 		newPos.MakeMove(move)
 		nextEval := -Negamax(ctx, newPos, depth-1, nodes, -beta, -alpha)
+		if nextEval >= beta {
+			return beta
+		}
+		if nextEval > alpha {
+			alpha = nextEval
+		}
+	}
+
+	return alpha
+}
+
+// Quiescence extends the search beyond the normal depth limit by only considering captures
+// (or, if in check, all legal moves), continuing until the position becomes "quiet".
+// This avoids the horizon effect, where a fixed-depth search stops mid-exchange and
+// misjudges the position.
+func Quiescence(ctx context.Context, pos Position, nodes *uint64, alpha, beta int) int {
+	*nodes++
+
+	// Check if we have time
+	select {
+	case <-ctx.Done():
+		return 0
+	default:
+	}
+
+	var moves []Move
+
+	var standPat int
+
+	isCheck := pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1)
+	if isCheck {
+		// Generate moves as usual
+		moves = GenerateLegalMoves(pos, pos.SideToMove)
+
+		// Check if Mate
+		if len(moves) == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
+			return -(MateValue + 1)
+		}
+
+	} else {
+		unsortedMoves := GenerateLegalMoves(pos, pos.SideToMove)
+
+		if pos.SideToMove == White {
+			standPat = Evaluate(pos)
+		} else {
+			standPat = -Evaluate(pos)
+		}
+
+		if standPat >= beta {
+			return beta
+		} else if standPat > alpha {
+			alpha = standPat
+		}
+
+		// Take only capture moves
+		for _, move := range unsortedMoves {
+			if isCapture(pos, move) {
+				moves = append(moves, move)
+			} else {
+				continue
+			}
+		}
+	}
+
+	// MVV-LVA
+	slices.SortFunc(moves, func(a, b Move) int {
+		return moveScore(pos, b) - moveScore(pos, a)
+	})
+
+	for _, move := range moves {
+		newPos := pos
+		newPos.MakeMove(move)
+
+		nextEval := -Quiescence(ctx, newPos, nodes, -beta, -alpha)
 		if nextEval >= beta {
 			return beta
 		}
@@ -138,4 +209,18 @@ func moveScore(pos Position, m Move) int {
 	}
 	attacker := pos.PieceAt(m.From())
 	return pieceValues[captured]*10 - pieceValues[attacker]
+}
+
+// isCapture reports whether move m is a capture
+// (including en passant)
+func isCapture(pos Position, m Move) bool {
+	if pos.PieceAt(m.To()) != AllPieces {
+		return true
+	} else {
+		// En passant capture check
+		if pos.PieceAt(m.From()) == Pawn && m.From().File() != m.To().File() {
+			return true
+		}
+		return false
+	}
 }
