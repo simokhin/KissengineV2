@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"slices"
 	"time"
 )
 
@@ -31,6 +32,12 @@ func Negamax(ctx context.Context, pos Position, depth int, nodes *uint64, alpha,
 	}
 
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
+
+	// MVV-LVA
+	slices.SortFunc(moves, func(a, b Move) int {
+		return moveScore(pos, b) - moveScore(pos, a)
+	})
+
 	if len(moves) == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
 		return -(MateValue + depth)
 	} else if len(moves) == 0 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
@@ -57,8 +64,13 @@ func BestMove(ctx context.Context, pos Position, depth int) (Move, uint64) {
 	var nodes uint64
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
-	var bestMove Move
-	var bestScore = Minimum
+	// MVV-LVA
+	slices.SortFunc(moves, func(a, b Move) int {
+		return moveScore(pos, b) - moveScore(pos, a)
+	})
+
+	bestMove := moves[0]
+	bestScore := Minimum
 
 	alpha := Minimum
 	beta := Maximum
@@ -76,24 +88,54 @@ func BestMove(ctx context.Context, pos Position, depth int) (Move, uint64) {
 	return bestMove, nodes
 }
 
+// SearchTimed performs iterative deepening negamax search, returning
+// the best move found before timeLimit expires along with the total node
+// count and the deepest depth fully searched. depth 1 always seeds bestMove
+// with a real legal move (even under extreme time pressure), and later
+// depths only overwrite it once they finish completely -- a depth cut short
+// by the time limit is discarded rather than allowed to replace a good,
+// fully-searched result with a worse, half-searched one.
 func SearchTimed(pos Position, timeLimit time.Duration) (Move, uint64, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeLimit)
 	defer cancel()
 
 	var completedDepth int
-	var bestMove Move
-	var totalNodes uint64
+	bestMove, totalNodes := BestMove(ctx, pos, 1)
+	if ctx.Err() == nil {
+		completedDepth = 1
+	}
 
-	for depth := 1; ; depth++ {
-		move, nodes := BestMove(ctx, pos, depth)
-		totalNodes += nodes
+	for depth := 2; ; depth++ {
 		if ctx.Err() != nil {
 			break
-		} else {
-			bestMove = move
-			completedDepth = depth
 		}
+
+		move, nodes := BestMove(ctx, pos, depth)
+		totalNodes += nodes
+
+		if ctx.Err() != nil {
+			break
+		}
+
+		bestMove = move
+		completedDepth = depth
 	}
 
 	return bestMove, totalNodes, completedDepth
+}
+
+// moveScore returns a priority score for move ordering: captures
+// of valuable pieces by less valuable attackers score highest (MVV-LVA).
+func moveScore(pos Position, m Move) int {
+	captured := pos.PieceAt(m.To())
+
+	if captured == AllPieces {
+		attacker := pos.PieceAt(m.From())
+		if attacker == Pawn && m.From().File() != m.To().File() {
+			return pieceValues[Pawn]*10 - pieceValues[Pawn]
+		}
+		return 0
+	}
+	attacker := pos.PieceAt(m.From())
+	return pieceValues[captured]*10 - pieceValues[attacker]
 }
