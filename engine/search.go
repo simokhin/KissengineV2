@@ -73,6 +73,22 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		return Quiescence(s.ctx, pos, &s.nodes, alpha, beta)
 	}
 
+	// Static null move pruning
+	var staticEval int
+	if beta-alpha == 1 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && beta < MateValue-1000 {
+		if pos.SideToMove == White {
+			staticEval = Evaluate(*pos)
+		} else {
+			staticEval = -Evaluate(*pos)
+		}
+
+		margin := 85 * depth
+		if staticEval-margin >= beta {
+			return beta
+		}
+
+	}
+
 	// Null move logic
 	if !nullMove && depth >= 4 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && hasNonPawnMaterial(*pos, pos.SideToMove) {
 		R := 3
@@ -257,7 +273,7 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta i
 }
 
 // BestMove returns the best move found by a fixed-depth negamax search.
-func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (Move, uint64, int) {
+func BestMove(ctx context.Context, pos Position, depth int, history []uint64, alpha, beta int) (Move, uint64, int) {
 	s := &SearchState{ctx: ctx}
 	moves := GenerateLegalMoves(pos, pos.SideToMove)
 
@@ -278,9 +294,6 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64) (M
 
 	bestMove := moves[0]
 	bestScore := Minimum
-
-	alpha := Minimum
-	beta := Maximum
 
 	for _, move := range moves {
 		undo := pos.MakeMove(move)
@@ -313,26 +326,37 @@ func SearchTimed(pos Position, timeLimit time.Duration, history []uint64) (Move,
 
 	var completedDepth int
 
-	bestMove, totalNodes, bestScore := BestMove(ctx, pos, 1, history)
+	bestMove, totalNodes, bestScore := BestMove(ctx, pos, 1, history, Minimum, Maximum)
 	if ctx.Err() == nil {
 		completedDepth = 1
 	}
+
+	windowSize := 50
+	alpha, beta := bestScore-windowSize, bestScore+windowSize
 
 	for depth := 2; ; depth++ {
 		if ctx.Err() != nil {
 			break
 		}
 
-		move, nodes, score := BestMove(ctx, pos, depth, history)
+		move, nodes, score := BestMove(ctx, pos, depth, history, alpha, beta)
 		totalNodes += nodes
 
 		if ctx.Err() != nil {
 			break
 		}
 
+		if score <= alpha || score >= beta {
+			alpha, beta = Minimum, Maximum
+			depth--
+			continue
+		}
+
 		bestMove = move
 		bestScore = score
 		completedDepth = depth
+
+		alpha, beta = score-windowSize, score+windowSize
 	}
 
 	return bestMove, totalNodes, completedDepth, bestScore
@@ -372,14 +396,28 @@ func SearchDepth(pos Position, maxDepth int, history []uint64) (Move, uint64, in
 	ctx := context.Background()
 
 	var completedDepth int
-	bestMove, totalNodes, bestScore := BestMove(ctx, pos, 1, history)
+	bestMove, totalNodes, bestScore := BestMove(ctx, pos, 1, history, Minimum, Maximum)
+
+	// Aspiration window
+	windowSize := 50
+	alpha, beta := bestScore-windowSize, bestScore+windowSize
 
 	for depth := 2; depth <= maxDepth; depth++ {
-		move, nodes, score := BestMove(ctx, pos, depth, history)
+		move, nodes, score := BestMove(ctx, pos, depth, history, alpha, beta)
+
 		totalNodes += nodes
+
+		if score <= alpha || score >= beta {
+			alpha, beta = Minimum, Maximum
+			depth--
+			continue
+		}
+
 		bestMove = move
 		bestScore = score
 		completedDepth = depth
+
+		alpha, beta = score-windowSize, score+windowSize
 	}
 
 	return bestMove, totalNodes, completedDepth, bestScore
