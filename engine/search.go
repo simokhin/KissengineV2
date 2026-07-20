@@ -283,3 +283,20 @@ func isCapture(pos Position, m Move) bool {
 		return false
 	}
 }
+
+func SearchDepth(pos Position, maxDepth int, history []uint64) (Move, uint64, int, int) {
+	ctx := context.Background()
+
+	var completedDepth int
+	bestMove, totalNodes, bestScore := BestMove(ctx, pos, 1, history)
+
+	for depth := 2; depth <= maxDepth; depth++ {
+		move, nodes, score := BestMove(ctx, pos, depth, history)
+		totalNodes += nodes
+		bestMove = move
+		bestScore = score
+		completedDepth = depth
+	}
+
+	return bestMove, totalNodes, completedDepth, bestScore
+}

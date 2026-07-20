@@ -41,10 +41,17 @@ func main() {
 			pos, history = handlePosition(fields)
 
 		case "go":
-			timeLimit := computeTimeLimit(fields, pos.SideToMove)
-			move, nodes, depth, bestScore := engine.SearchTimed(*pos, timeLimit, history)
-			fmt.Printf("info depth %d nodes %d %s\n", depth, nodes, formatScore(bestScore))
-			fmt.Println("bestmove", move.UCI())
+			if len(fields) > 2 && fields[1] == "depth" {
+				requestedDepth, _ := strconv.Atoi(fields[2])
+				move, nodes, depth, bestScore := engine.SearchDepth(*pos, requestedDepth, history)
+				fmt.Printf("info depth %d nodes %d %s\n", depth, nodes, formatScore(bestScore))
+				fmt.Println("bestmove", move.UCI())
+			} else {
+				timeLimit := computeTimeLimit(fields, pos.SideToMove)
+				move, nodes, depth, bestScore := engine.SearchTimed(*pos, timeLimit, history)
+				fmt.Printf("info depth %d nodes %d %s\n", depth, nodes, formatScore(bestScore))
+				fmt.Println("bestmove", move.UCI())
+			}
 		case "quit":
 			return
 		}
