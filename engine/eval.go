@@ -7,6 +7,8 @@ const (
 	bishopMobilityBonus = 3
 	rookMobilityBonus   = 2
 	queenMobilityBonus  = 1
+
+	passedPawnBonus = 20
 )
 
 const (
@@ -47,7 +49,6 @@ func Evaluate(pos Position) int {
 	phase := gamePhase(pos)
 
 	for pt := Pawn; pt <= King; pt++ {
-
 		whitePieces := pos.Pieces[pt] & pos.Colors[White]
 		for whitePieces != 0 {
 			sq := whitePieces.PopLSB()
@@ -73,7 +74,28 @@ func Evaluate(pos Position) int {
 				mobilityBonus = (queenAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[White]).PopCount() * queenMobilityBonus
 			}
 
-			eval += pieceValues[pt] + pstValue + mobilityBonus
+			// Passed pawn bonus
+			var passedBonus int
+			if pt == Pawn {
+				frontFiles := fileMask(Square(sq.File()))
+				if sq.File() > 0 {
+					frontFiles |= fileMask(Square(sq.File() - 1))
+				}
+				if sq.File() < 7 {
+					frontFiles |= fileMask(Square(sq.File() + 1))
+				}
+
+				var frontRanks Bitboard
+				for r := sq.Rank() + 1; r <= 7; r++ {
+					frontRanks |= rankMask(Square(r * 8))
+				}
+
+				if pos.Pieces[Pawn]&pos.Colors[Black]&frontFiles&frontRanks == 0 {
+					passedBonus = passedPawnBonus
+				}
+			}
+
+			eval += pieceValues[pt] + pstValue + mobilityBonus + passedBonus
 		}
 
 		blackPieces := pos.Pieces[pt] & pos.Colors[Black]
@@ -101,13 +123,36 @@ func Evaluate(pos Position) int {
 				mobilityBonus = (queenAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[Black]).PopCount() * queenMobilityBonus
 			}
 
-			eval -= pieceValues[pt] + pstValue + mobilityBonus
+			// Passed pawn bonus
+			var passedBonus int
+			if pt == Pawn {
+				frontFiles := fileMask(Square(sq.File()))
+				if sq.File() > 0 {
+					frontFiles |= fileMask(Square(sq.File() - 1))
+				}
+				if sq.File() < 7 {
+					frontFiles |= fileMask(Square(sq.File() + 1))
+				}
+
+				var frontRanks Bitboard
+				for r := sq.Rank() - 1; r >= 0; r-- {
+					frontRanks |= rankMask(Square(r * 8))
+				}
+
+				if pos.Pieces[Pawn]&pos.Colors[White]&frontFiles&frontRanks == 0 {
+					passedBonus = passedPawnBonus
+				}
+			}
+
+			eval -= pieceValues[pt] + pstValue + mobilityBonus + passedBonus
 		}
 	}
 
 	// Doubled/isolated pawn penalty
 	var dpPenalty int
 	for file := A1; file <= H1; file++ {
+
+		// Check if pawn is doubled
 		whiteCount := (pos.Pieces[Pawn] & pos.Colors[White] & fileMask(file)).PopCount()
 		if whiteCount > 1 {
 			dpPenalty += (whiteCount - 1) * doubledPawnPenalty
