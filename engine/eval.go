@@ -10,7 +10,8 @@ const (
 )
 
 const (
-	doubledPawnPenalty = -10
+	doubledPawnPenalty  = -10
+	isolatedPawnPenalty = -15
 )
 
 var pieceValues = [7]int{
@@ -104,7 +105,7 @@ func Evaluate(pos Position) int {
 		}
 	}
 
-	// Doubled pawn penalty
+	// Doubled/isolated pawn penalty
 	var dpPenalty int
 	for file := A1; file <= H1; file++ {
 		whiteCount := (pos.Pieces[Pawn] & pos.Colors[White] & fileMask(file)).PopCount()
@@ -116,6 +117,20 @@ func Evaluate(pos Position) int {
 		if blackCount > 1 {
 			dpPenalty -= (blackCount - 1) * doubledPawnPenalty
 		}
+
+		// Check if pawn is isolated
+		whiteLeftEmpty := file == A1 || (pos.Pieces[Pawn]&pos.Colors[White]&fileMask(file-1)).PopCount() == 0
+		whiteRightEmpty := file == H1 || (pos.Pieces[Pawn]&pos.Colors[White]&fileMask(file+1)).PopCount() == 0
+		if whiteCount > 0 && whiteLeftEmpty && whiteRightEmpty {
+			dpPenalty += whiteCount * isolatedPawnPenalty
+		}
+
+		blackLeftEmpty := file == A1 || (pos.Pieces[Pawn]&pos.Colors[Black]&fileMask(file-1)).PopCount() == 0
+		blackRightEmpty := file == H1 || (pos.Pieces[Pawn]&pos.Colors[Black]&fileMask(file+1)).PopCount() == 0
+		if blackCount > 0 && blackLeftEmpty && blackRightEmpty {
+			dpPenalty -= blackCount * isolatedPawnPenalty
+		}
+
 	}
 
 	return eval + dpPenalty
