@@ -7,7 +7,7 @@ func BenchmarkSearchDepth(b *testing.B) {
 	history := []uint64{pos.Hash()}
 
 	for b.Loop() {
-		tTable = [1 << 20]TTEntry{}
+		tTable = [1 << 24]TTEntry{}
 
 		SearchDepth(*pos, 6, history)
 	}

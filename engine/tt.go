@@ -22,7 +22,7 @@ type TTEntry struct {
 }
 
 // tTable is the transposition table, indexed by a masked Zobrist hash.
-var tTable [1 << 20]TTEntry
+var tTable [1 << 24]TTEntry
 
 func ttIndex(hash uint64) uint64 {
 	return hash & (uint64(len(tTable)) - 1)

@@ -174,7 +174,9 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 			// Store position in tTable
 			flag = LowerBound
-			ttStore(hash, depth, beta, LowerBound, move)
+			if s.ctx.Err() == nil {
+				ttStore(hash, depth, beta, LowerBound, move)
+			}
 
 			return beta
 		}
@@ -191,7 +193,9 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	}
 
 	// Store position in tTable
-	ttStore(hash, depth, alpha, flag, bestMove)
+	if s.ctx.Err() == nil {
+		ttStore(hash, depth, alpha, flag, bestMove)
+	}
 
 	return alpha
 }
