@@ -9,6 +9,7 @@ const (
 	queenMobilityBonus  = 1
 
 	passedPawnBonus = 20
+	bishopPairBonus = 30
 )
 
 const (
@@ -175,10 +176,18 @@ func Evaluate(pos Position) int {
 		if blackCount > 0 && blackLeftEmpty && blackRightEmpty {
 			dpPenalty -= blackCount * isolatedPawnPenalty
 		}
-
 	}
 
-	return eval + dpPenalty
+	// Bishop pair bonus
+	var bpBonus int
+	if (pos.Pieces[Bishop] & pos.Colors[White]).PopCount() >= 2 {
+		bpBonus += bishopPairBonus
+	}
+	if (pos.Pieces[Bishop] & pos.Colors[Black]).PopCount() >= 2 {
+		bpBonus -= bishopPairBonus
+	}
+
+	return eval + dpPenalty + bpBonus
 }
 
 func gamePhase(pos Position) int {
