@@ -78,9 +78,9 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	var staticEval int
 	if beta-alpha == 1 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && beta < MateValue-1000 {
 		if pos.SideToMove == White {
-			staticEval = Evaluate(*pos)
+			staticEval = Evaluate(pos)
 		} else {
-			staticEval = -Evaluate(*pos)
+			staticEval = -Evaluate(pos)
 		}
 
 		margin := 85 * depth
@@ -233,9 +233,9 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 		unsortedMoves := GenerateLegalMoves(*pos, pos.SideToMove)
 
 		if pos.SideToMove == White {
-			standPat = Evaluate(*pos)
+			standPat = Evaluate(pos)
 		} else {
-			standPat = -Evaluate(*pos)
+			standPat = -Evaluate(pos)
 		}
 
 		if standPat >= beta {

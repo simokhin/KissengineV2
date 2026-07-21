@@ -8,8 +8,6 @@ const (
 	rookMobilityBonus   = 2
 	queenMobilityBonus  = 1
 
-	passedPawnBonus = 20
-
 	bishopPairBonus = 30
 
 	openFileBonus     = 15
@@ -22,6 +20,8 @@ const (
 	doubledPawnPenalty  = -10
 	isolatedPawnPenalty = -15
 )
+
+var passedPawnRankBonus = [8]int{0, 5, 10, 20, 35, 60, 100, 150}
 
 var pieceValues = [7]int{
 	Pawn:   100,
@@ -50,7 +50,58 @@ var phaseWeights = [7]int{
 	Queen:  4,
 }
 
-func Evaluate(pos Position) int {
+// fileMasks[file] is a precomputed bitboard of an entire file (0=A..7=H).
+var fileMasks [8]Bitboard
+
+// passedPawnMasks[color][sq] is a precomputed bitboard covering the pawn's
+// own file and the two adjacent files, on all ranks ahead of it (toward
+// promotion for that color). A pawn is passed if no enemy pawn intersects
+// this mask -- computing it once at startup avoids rebuilding it out of
+// fileMask/rankMask loops on every Evaluate call.
+var passedPawnMasks [2][64]Bitboard
+
+// kingShieldMasks[color][sq] is a precomputed bitboard covering the king's
+// own file and the two adjacent files, on the single rank directly ahead of
+// it (toward the enemy). Empty if the king is already on its own back rank
+// edge (no rank ahead to shield with).
+var kingShieldMasks [2][64]Bitboard
+
+func init() {
+	for f := range 8 {
+		fileMasks[f] = fileMask(Square(f))
+	}
+
+	for sq := A1; sq <= H8; sq++ {
+		frontFiles := fileMasks[sq.File()]
+		if sq.File() > 0 {
+			frontFiles |= fileMasks[sq.File()-1]
+		}
+		if sq.File() < 7 {
+			frontFiles |= fileMasks[sq.File()+1]
+		}
+
+		var whiteFrontRanks Bitboard
+		for r := sq.Rank() + 1; r <= 7; r++ {
+			whiteFrontRanks |= rankMask(Square(r * 8))
+		}
+		passedPawnMasks[White][sq] = frontFiles & whiteFrontRanks
+
+		var blackFrontRanks Bitboard
+		for r := sq.Rank() - 1; r >= 0; r-- {
+			blackFrontRanks |= rankMask(Square(r * 8))
+		}
+		passedPawnMasks[Black][sq] = frontFiles & blackFrontRanks
+
+		if sq.Rank() < 7 {
+			kingShieldMasks[White][sq] = frontFiles & rankMask(Square((sq.Rank()+1)*8))
+		}
+		if sq.Rank() > 0 {
+			kingShieldMasks[Black][sq] = frontFiles & rankMask(Square((sq.Rank()-1)*8))
+		}
+	}
+}
+
+func Evaluate(pos *Position) int {
 	var eval int
 
 	phase := gamePhase(pos)
@@ -84,7 +135,7 @@ func Evaluate(pos Position) int {
 			// Rook on open file bonus
 			var ofBonus int
 			if pt == Rook {
-				frontFile := fileMask(Square(sq.File()))
+				frontFile := fileMasks[sq.File()]
 				if (pos.Pieces[Pawn] & frontFile) == 0 {
 					ofBonus += openFileBonus
 				} else if (pos.Pieces[Pawn] & pos.Colors[White] & frontFile) == 0 {
@@ -95,39 +146,13 @@ func Evaluate(pos Position) int {
 			// King safety bonus
 			var ksBonus int
 			if pt == King {
-				shieldFiles := fileMask(Square(sq.File()))
-				if sq.File() > 0 {
-					shieldFiles |= fileMask(Square(sq.File() - 1))
-				}
-				if sq.File() < 7 {
-					shieldFiles |= fileMask(Square(sq.File() + 1))
-				}
-
-				if sq.Rank() < 7 {
-					shieldRank := rankMask(Square((sq.Rank() + 1) * 8))
-					ksBonus = (pos.Pieces[Pawn] & pos.Colors[White] & shieldFiles & shieldRank).PopCount() * pawnShieldBonus
-				}
+				ksBonus = (pos.Pieces[Pawn] & pos.Colors[White] & kingShieldMasks[White][sq]).PopCount() * pawnShieldBonus
 			}
 
 			// Passed pawn bonus
 			var passedBonus int
-			if pt == Pawn {
-				frontFiles := fileMask(Square(sq.File()))
-				if sq.File() > 0 {
-					frontFiles |= fileMask(Square(sq.File() - 1))
-				}
-				if sq.File() < 7 {
-					frontFiles |= fileMask(Square(sq.File() + 1))
-				}
-
-				var frontRanks Bitboard
-				for r := sq.Rank() + 1; r <= 7; r++ {
-					frontRanks |= rankMask(Square(r * 8))
-				}
-
-				if pos.Pieces[Pawn]&pos.Colors[Black]&frontFiles&frontRanks == 0 {
-					passedBonus = passedPawnBonus
-				}
+			if pt == Pawn && pos.Pieces[Pawn]&pos.Colors[Black]&passedPawnMasks[White][sq] == 0 {
+				passedBonus = passedPawnRankBonus[sq.Rank()]
 			}
 
 			eval += pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus + ksBonus
@@ -161,7 +186,7 @@ func Evaluate(pos Position) int {
 			// Rook on open file bonus
 			var ofBonus int
 			if pt == Rook {
-				frontFile := fileMask(Square(sq.File()))
+				frontFile := fileMasks[sq.File()]
 				if (pos.Pieces[Pawn] & frontFile) == 0 {
 					ofBonus += openFileBonus
 				} else if (pos.Pieces[Pawn] & pos.Colors[Black] & frontFile) == 0 {
@@ -172,39 +197,13 @@ func Evaluate(pos Position) int {
 			// King safety bonus
 			var ksBonus int
 			if pt == King {
-				shieldFiles := fileMask(Square(sq.File()))
-				if sq.File() > 0 {
-					shieldFiles |= fileMask(Square(sq.File() - 1))
-				}
-				if sq.File() < 7 {
-					shieldFiles |= fileMask(Square(sq.File() + 1))
-				}
-
-				if sq.Rank() > 0 {
-					shieldRank := rankMask(Square((sq.Rank() - 1) * 8))
-					ksBonus = (pos.Pieces[Pawn] & pos.Colors[Black] & shieldFiles & shieldRank).PopCount() * pawnShieldBonus
-				}
+				ksBonus = (pos.Pieces[Pawn] & pos.Colors[Black] & kingShieldMasks[Black][sq]).PopCount() * pawnShieldBonus
 			}
 
 			// Passed pawn bonus
 			var passedBonus int
-			if pt == Pawn {
-				frontFiles := fileMask(Square(sq.File()))
-				if sq.File() > 0 {
-					frontFiles |= fileMask(Square(sq.File() - 1))
-				}
-				if sq.File() < 7 {
-					frontFiles |= fileMask(Square(sq.File() + 1))
-				}
-
-				var frontRanks Bitboard
-				for r := sq.Rank() - 1; r >= 0; r-- {
-					frontRanks |= rankMask(Square(r * 8))
-				}
-
-				if pos.Pieces[Pawn]&pos.Colors[White]&frontFiles&frontRanks == 0 {
-					passedBonus = passedPawnBonus
-				}
+			if pt == Pawn && pos.Pieces[Pawn]&pos.Colors[White]&passedPawnMasks[Black][sq] == 0 {
+				passedBonus = passedPawnRankBonus[7-sq.Rank()]
 			}
 
 			eval -= pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus + ksBonus
@@ -213,28 +212,28 @@ func Evaluate(pos Position) int {
 
 	// Doubled/isolated pawn penalty
 	var dpPenalty int
-	for file := A1; file <= H1; file++ {
+	for f := range 8 {
 
 		// Check if pawn is doubled
-		whiteCount := (pos.Pieces[Pawn] & pos.Colors[White] & fileMask(file)).PopCount()
+		whiteCount := (pos.Pieces[Pawn] & pos.Colors[White] & fileMasks[f]).PopCount()
 		if whiteCount > 1 {
 			dpPenalty += (whiteCount - 1) * doubledPawnPenalty
 		}
 
-		blackCount := (pos.Pieces[Pawn] & pos.Colors[Black] & fileMask(file)).PopCount()
+		blackCount := (pos.Pieces[Pawn] & pos.Colors[Black] & fileMasks[f]).PopCount()
 		if blackCount > 1 {
 			dpPenalty -= (blackCount - 1) * doubledPawnPenalty
 		}
 
 		// Check if pawn is isolated
-		whiteLeftEmpty := file == A1 || (pos.Pieces[Pawn]&pos.Colors[White]&fileMask(file-1)).PopCount() == 0
-		whiteRightEmpty := file == H1 || (pos.Pieces[Pawn]&pos.Colors[White]&fileMask(file+1)).PopCount() == 0
+		whiteLeftEmpty := f == 0 || (pos.Pieces[Pawn]&pos.Colors[White]&fileMasks[f-1]).PopCount() == 0
+		whiteRightEmpty := f == 7 || (pos.Pieces[Pawn]&pos.Colors[White]&fileMasks[f+1]).PopCount() == 0
 		if whiteCount > 0 && whiteLeftEmpty && whiteRightEmpty {
 			dpPenalty += whiteCount * isolatedPawnPenalty
 		}
 
-		blackLeftEmpty := file == A1 || (pos.Pieces[Pawn]&pos.Colors[Black]&fileMask(file-1)).PopCount() == 0
-		blackRightEmpty := file == H1 || (pos.Pieces[Pawn]&pos.Colors[Black]&fileMask(file+1)).PopCount() == 0
+		blackLeftEmpty := f == 0 || (pos.Pieces[Pawn]&pos.Colors[Black]&fileMasks[f-1]).PopCount() == 0
+		blackRightEmpty := f == 7 || (pos.Pieces[Pawn]&pos.Colors[Black]&fileMasks[f+1]).PopCount() == 0
 		if blackCount > 0 && blackLeftEmpty && blackRightEmpty {
 			dpPenalty -= blackCount * isolatedPawnPenalty
 		}
@@ -252,7 +251,7 @@ func Evaluate(pos Position) int {
 	return eval + dpPenalty + bpBonus
 }
 
-func gamePhase(pos Position) int {
+func gamePhase(pos *Position) int {
 	var phase int
 
 	for pt := Pawn; pt <= King; pt++ {
