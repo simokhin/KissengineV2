@@ -9,7 +9,11 @@ const (
 	queenMobilityBonus  = 1
 
 	passedPawnBonus = 20
+
 	bishopPairBonus = 30
+
+	openFileBonus     = 15
+	semiOpenFileBonus = 8
 )
 
 const (
@@ -75,6 +79,17 @@ func Evaluate(pos Position) int {
 				mobilityBonus = (queenAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[White]).PopCount() * queenMobilityBonus
 			}
 
+			// Rook on open file bonus
+			var ofBonus int
+			if pt == Rook {
+				frontFile := fileMask(Square(sq.File()))
+				if (pos.Pieces[Pawn] & frontFile) == 0 {
+					ofBonus += openFileBonus
+				} else if (pos.Pieces[Pawn] & pos.Colors[White] & frontFile) == 0 {
+					ofBonus += semiOpenFileBonus
+				}
+			}
+
 			// Passed pawn bonus
 			var passedBonus int
 			if pt == Pawn {
@@ -96,7 +111,7 @@ func Evaluate(pos Position) int {
 				}
 			}
 
-			eval += pieceValues[pt] + pstValue + mobilityBonus + passedBonus
+			eval += pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus
 		}
 
 		blackPieces := pos.Pieces[pt] & pos.Colors[Black]
@@ -124,6 +139,17 @@ func Evaluate(pos Position) int {
 				mobilityBonus = (queenAttacksMagic(sq, pos.Pieces[AllPieces]) &^ pos.Colors[Black]).PopCount() * queenMobilityBonus
 			}
 
+			// Rook on open file bonus
+			var ofBonus int
+			if pt == Rook {
+				frontFile := fileMask(Square(sq.File()))
+				if (pos.Pieces[Pawn] & frontFile) == 0 {
+					ofBonus += openFileBonus
+				} else if (pos.Pieces[Pawn] & pos.Colors[Black] & frontFile) == 0 {
+					ofBonus += semiOpenFileBonus
+				}
+			}
+
 			// Passed pawn bonus
 			var passedBonus int
 			if pt == Pawn {
@@ -145,7 +171,7 @@ func Evaluate(pos Position) int {
 				}
 			}
 
-			eval -= pieceValues[pt] + pstValue + mobilityBonus + passedBonus
+			eval -= pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus
 		}
 	}
 
