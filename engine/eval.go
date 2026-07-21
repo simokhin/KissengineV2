@@ -14,6 +14,8 @@ const (
 
 	openFileBonus     = 15
 	semiOpenFileBonus = 8
+
+	pawnShieldBonus = 10
 )
 
 const (
@@ -90,6 +92,23 @@ func Evaluate(pos Position) int {
 				}
 			}
 
+			// King safety bonus
+			var ksBonus int
+			if pt == King {
+				shieldFiles := fileMask(Square(sq.File()))
+				if sq.File() > 0 {
+					shieldFiles |= fileMask(Square(sq.File() - 1))
+				}
+				if sq.File() < 7 {
+					shieldFiles |= fileMask(Square(sq.File() + 1))
+				}
+
+				if sq.Rank() < 7 {
+					shieldRank := rankMask(Square((sq.Rank() + 1) * 8))
+					ksBonus = (pos.Pieces[Pawn] & pos.Colors[White] & shieldFiles & shieldRank).PopCount() * pawnShieldBonus
+				}
+			}
+
 			// Passed pawn bonus
 			var passedBonus int
 			if pt == Pawn {
@@ -111,7 +130,7 @@ func Evaluate(pos Position) int {
 				}
 			}
 
-			eval += pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus
+			eval += pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus + ksBonus
 		}
 
 		blackPieces := pos.Pieces[pt] & pos.Colors[Black]
@@ -150,6 +169,23 @@ func Evaluate(pos Position) int {
 				}
 			}
 
+			// King safety bonus
+			var ksBonus int
+			if pt == King {
+				shieldFiles := fileMask(Square(sq.File()))
+				if sq.File() > 0 {
+					shieldFiles |= fileMask(Square(sq.File() - 1))
+				}
+				if sq.File() < 7 {
+					shieldFiles |= fileMask(Square(sq.File() + 1))
+				}
+
+				if sq.Rank() > 0 {
+					shieldRank := rankMask(Square((sq.Rank() - 1) * 8))
+					ksBonus = (pos.Pieces[Pawn] & pos.Colors[Black] & shieldFiles & shieldRank).PopCount() * pawnShieldBonus
+				}
+			}
+
 			// Passed pawn bonus
 			var passedBonus int
 			if pt == Pawn {
@@ -171,7 +207,7 @@ func Evaluate(pos Position) int {
 				}
 			}
 
-			eval -= pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus
+			eval -= pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus + ksBonus
 		}
 	}
 
