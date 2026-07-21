@@ -54,23 +54,24 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 	// Check position in the transpositional table
 	entry, found := ttProbe(hash)
+	adjustedScore := adjustMateForRetreve(entry.score, ply)
 	if found && entry.depth >= depth {
 		switch entry.flag {
 		case Exact:
-			return entry.score
+			return adjustedScore
 		case LowerBound:
-			if entry.score >= beta {
+			if adjustedScore >= beta {
 				return beta
 			}
 		case UpperBound:
-			if entry.score <= alpha {
+			if adjustedScore <= alpha {
 				return alpha
 			}
 		}
 	}
 
 	if depth == 0 {
-		return Quiescence(s.ctx, pos, &s.nodes, alpha, beta)
+		return Quiescence(s.ctx, pos, &s.nodes, alpha, beta, ply)
 	}
 
 	// Static null move pruning
@@ -113,7 +114,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 	// Check Mate/Stalemate
 	if len(moves) == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
-		return -(MateValue + depth)
+		return -(MateValue - ply)
 	} else if len(moves) == 0 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
 		return 0
 	}
@@ -175,7 +176,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 			// Store position in tTable
 			flag = LowerBound
 			if s.ctx.Err() == nil {
-				ttStore(hash, depth, beta, LowerBound, move)
+				ttStore(hash, depth, adjustMateForStore(beta, ply), LowerBound, move)
 			}
 
 			return beta
@@ -194,7 +195,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 	// Store position in tTable
 	if s.ctx.Err() == nil {
-		ttStore(hash, depth, alpha, flag, bestMove)
+		ttStore(hash, depth, adjustMateForStore(alpha, ply), flag, bestMove)
 	}
 
 	return alpha
@@ -204,7 +205,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 // (or, if in check, all legal moves), continuing until the position becomes "quiet".
 // This avoids the horizon effect, where a fixed-depth search stops mid-exchange and
 // misjudges the position.
-func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta int) int {
+func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, ply int) int {
 	*nodes++
 
 	// Check if we have time
@@ -225,7 +226,7 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta i
 
 		// Check if Mate
 		if len(moves) == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
-			return -(MateValue + 1)
+			return -(MateValue - ply)
 		}
 
 	} else {
@@ -261,7 +262,7 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta i
 	for _, move := range moves {
 		undo := pos.MakeMove(move)
 
-		nextEval := -Quiescence(ctx, pos, nodes, -beta, -alpha)
+		nextEval := -Quiescence(ctx, pos, nodes, -beta, -alpha, ply+1)
 
 		pos.UnmakeMove(move, undo)
 
@@ -283,7 +284,7 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64, al
 
 	if len(moves) == 0 {
 		if pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
-			return Move(0), 0, -(MateValue + depth)
+			return Move(0), 0, -(MateValue + 0)
 		}
 		return Move(0), 0, 0
 	}
@@ -490,4 +491,24 @@ func (s *SearchState) canReduce(pos Position, move Move, depth, i, ply int) bool
 	}
 
 	return false
+}
+
+func adjustMateForStore(score, ply int) int {
+	if score >= MateValue-1000 {
+		return score + ply
+	}
+	if score <= -(MateValue - 1000) {
+		return score - ply
+	}
+	return score
+}
+
+func adjustMateForRetreve(score, ply int) int {
+	if score >= MateValue-1000 {
+		return score - ply
+	}
+	if score <= -(MateValue - 1000) {
+		return score + ply
+	}
+	return score
 }
