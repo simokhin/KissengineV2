@@ -9,6 +9,10 @@ const (
 	queenMobilityBonus  = 1
 )
 
+const (
+	doubledPawnPenalty = -10
+)
+
 var pieceValues = [7]int{
 	Pawn:   100,
 	Knight: 320,
@@ -100,7 +104,21 @@ func Evaluate(pos Position) int {
 		}
 	}
 
-	return eval
+	// Doubled pawn penalty
+	var dpPenalty int
+	for file := A1; file <= H1; file++ {
+		whiteCount := (pos.Pieces[Pawn] & pos.Colors[White] & fileMask(file)).PopCount()
+		if whiteCount > 1 {
+			dpPenalty += (whiteCount - 1) * doubledPawnPenalty
+		}
+
+		blackCount := (pos.Pieces[Pawn] & pos.Colors[Black] & fileMask(file)).PopCount()
+		if blackCount > 1 {
+			dpPenalty -= (blackCount - 1) * doubledPawnPenalty
+		}
+	}
+
+	return eval + dpPenalty
 }
 
 func gamePhase(pos Position) int {
