@@ -12,6 +12,32 @@ const (
 	Maximum   = MateValue + 1
 )
 
+// scoredMove pairs a move with its precomputed ordering score.
+type scoredMove struct {
+	move  Move
+	score int
+}
+
+// sortMovesByScore reorders moves in place by descending score(m). Computes
+// each move's score exactly once (an O(n) pass) instead of the O(n log n)
+// score recomputation a comparator calling score(a)/score(b) on every
+// slices.SortFunc comparison would do.
+func sortMovesByScore(moves []Move, score func(Move) int) {
+	var scored [maxMoves]scoredMove
+	for i, m := range moves {
+		scored[i] = scoredMove{move: m, score: score(m)}
+	}
+
+	sorted := scored[:len(moves)]
+	slices.SortFunc(sorted, func(a, b scoredMove) int {
+		return b.score - a.score
+	})
+
+	for i, sm := range sorted {
+		moves[i] = sm.move
+	}
+}
+
 type SearchState struct {
 	ctx        context.Context
 	nodes      uint64
@@ -112,8 +138,8 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	moves := moveList.Slice()
 
 	// Order moves (ttMove => captures => killers => others)
-	slices.SortFunc(moves, func(a, b Move) int {
-		return s.orderScore(*pos, ply, b, entry.bestMove) - s.orderScore(*pos, ply, a, entry.bestMove)
+	sortMovesByScore(moves, func(m Move) int {
+		return s.orderScore(*pos, ply, m, entry.bestMove)
 	})
 
 	// Check Mate/Stalemate
@@ -252,8 +278,8 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 	moves := moveList.Slice()
 
 	// MVV-LVA
-	slices.SortFunc(moves, func(a, b Move) int {
-		return moveScore(*pos, b) - moveScore(*pos, a)
+	sortMovesByScore(moves, func(m Move) int {
+		return moveScore(*pos, m)
 	})
 
 	for _, move := range moves {
@@ -292,8 +318,8 @@ func BestMove(ctx context.Context, pos Position, depth int, history []uint64, al
 	entry, _ := ttProbe(hash)
 
 	// Ordering move ttMove => Captures => Others
-	slices.SortFunc(moves, func(a, b Move) int {
-		return s.orderScore(pos, 0, b, entry.bestMove) - s.orderScore(pos, 0, a, entry.bestMove)
+	sortMovesByScore(moves, func(m Move) int {
+		return s.orderScore(pos, 0, m, entry.bestMove)
 	})
 
 	bestMove := moves[0]
