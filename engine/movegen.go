@@ -110,6 +110,26 @@ func GenerateLegalMoves(pos Position, color Color) []Move {
 	return legalmoves
 }
 
+// GenerateLegalCaptures returns only the legal capture moves for color -
+// cheaper than GenerateLegalMoves when quiet moves aren't needed (quiescence).
+func GenerateLegalCaptures(pos Position, color Color) []Move {
+	pseudo := GenerateMoves(pos, color)
+
+	var captures []Move
+	for _, m := range pseudo {
+		if !isCapture(pos, m) {
+			continue
+		}
+		undo := pos.MakeMove(m)
+		if !pos.IsAttacked(pos.KingSquare(color), color^1) {
+			captures = append(captures, m)
+		}
+		pos.UnmakeMove(m, undo)
+	}
+
+	return captures
+}
+
 // GenerateMoves returns all pseudo-legal moves for the given color in the position.
 func GenerateMoves(pos Position, color Color) []Move {
 	var moves []Move

@@ -230,8 +230,6 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 		}
 
 	} else {
-		unsortedMoves := GenerateLegalMoves(*pos, pos.SideToMove)
-
 		if pos.SideToMove == White {
 			standPat = Evaluate(pos)
 		} else {
@@ -244,14 +242,7 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 			alpha = standPat
 		}
 
-		// Take only capture moves
-		for _, move := range unsortedMoves {
-			if isCapture(*pos, move) {
-				moves = append(moves, move)
-			} else {
-				continue
-			}
-		}
+		moves = GenerateLegalCaptures(*pos, pos.SideToMove)
 	}
 
 	// MVV-LVA
