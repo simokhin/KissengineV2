@@ -32,8 +32,10 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 	hash := pos.Hash()
 
-	// Take last moves from history
-	start := len(history) - 1 - pos.FiftyMovesRule
+	// Take last moves from history. Clamped to 0: when search starts from a
+	// FEN with a nonzero halfmove clock, history only holds moves made
+	// since the search began, which can be fewer than FiftyMovesRule.
+	start := max(0, len(history)-1-pos.FiftyMovesRule)
 	lastHistory := history[start:]
 
 	// Check for a draw by threefold repetition.
