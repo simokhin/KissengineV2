@@ -58,23 +58,31 @@ func (p *Position) hashFromScratch() uint64 {
 	return hash
 }
 
-// init fills the Zobrist key tables with random values.
+// init fills the Zobrist key tables with random values from a fixed seed,
+// so the tables (and therefore search behavior at a given depth/position)
+// are reproducible across runs. Go 1.20+ auto-seeds the math/rand package
+// source randomly at startup, so calling the package-level rand.Uint64()
+// here would give a different table -- and therefore different
+// transposition-table collisions and slightly different search results --
+// on every process run.
 func init() {
+	rng := rand.New(rand.NewSource(1))
+
 	for color := range 2 {
 		for pt := range 6 {
 			for sq := range 64 {
-				zobristPieces[color][pt][sq] = rand.Uint64()
+				zobristPieces[color][pt][sq] = rng.Uint64()
 			}
 		}
 	}
 
-	zobristSideToMove = rand.Uint64()
+	zobristSideToMove = rng.Uint64()
 
 	for castle := range 4 {
-		zobristCastling[castle] = rand.Uint64()
+		zobristCastling[castle] = rng.Uint64()
 	}
 
 	for file := range 8 {
-		zobristEnPassantFile[file] = rand.Uint64()
+		zobristEnPassantFile[file] = rng.Uint64()
 	}
 }
