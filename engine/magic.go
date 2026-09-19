@@ -103,6 +103,35 @@ func findMagic(s Square, mask Bitboard, sliderAttacks func(Square, Bitboard) Bit
 	}
 }
 
+func pinnedPieces(pos *Position, color Color) Bitboard {
+	kingSq := pos.KingSquare(color)
+	occ := pos.Pieces[AllPieces]
+	own := pos.Colors[color]
+	enemy := pos.Colors[color^1]
+
+	var pinned Bitboard
+
+	rookXray := rookAttacksMagic(kingSq, occ&^own) & enemy & (pos.Pieces[Rook] | pos.Pieces[Queen])
+	for rookXray != 0 {
+		pinnedSq := rookXray.PopLSB()
+		between := rookAttacksMagic(kingSq, pinnedSq.BB()) & rookAttacksMagic(pinnedSq, kingSq.BB())
+		if blockers := between & occ; blockers.PopCount() == 1 && blockers&own != 0 {
+			pinned |= blockers
+		}
+	}
+
+	bishopXray := bishopAttacksMagic(kingSq, occ&^own) & enemy & (pos.Pieces[Bishop] | pos.Pieces[Queen])
+	for bishopXray != 0 {
+		pinnerSq := bishopXray.PopLSB()
+		between := bishopAttacksMagic(kingSq, pinnerSq.BB()) & bishopAttacksMagic(pinnerSq, kingSq.BB())
+		if blockers := between & occ; blockers.PopCount() == 1 && blockers&own != 0 {
+			pinned |= blockers
+		}
+	}
+
+	return pinned
+}
+
 // init builds the attack lookup tables for all 64 squares using the
 // precomputed magic numbers.
 func init() {

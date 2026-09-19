@@ -96,12 +96,23 @@ var KingAttacks [64]Bitboard
 func GenerateLegalMoves(pos Position, color Color) []Move {
 	pseudoLMoves := GenerateMoves(pos, color)
 
+	kingSq := pos.KingSquare(color)
+	inCheck := pos.IsAttacked(kingSq, color^1)
+	pinned := pinnedPieces(&pos, color)
+
 	var legalmoves []Move
 
 	for _, m := range pseudoLMoves {
+		piece := pos.PieceAt(m.From())
+		isEnPassant := piece == Pawn && m.From().File() != m.To().File() && pos.PieceAt(m.To()) == AllPieces
+
+		if !inCheck && piece != King && pinned&m.From().BB() == 0 && !isEnPassant {
+			legalmoves = append(legalmoves, m)
+			continue
+		}
+
 		undo := pos.MakeMove(m)
-		kingSqure := pos.KingSquare(color)
-		if !pos.IsAttacked(kingSqure, color^1) {
+		if !pos.IsAttacked(pos.KingSquare(color), color^1) {
 			legalmoves = append(legalmoves, m)
 		}
 		pos.UnmakeMove(m, undo)
