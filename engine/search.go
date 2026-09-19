@@ -102,9 +102,11 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		return Quiescence(s.ctx, pos, &s.nodes, alpha, beta, ply)
 	}
 
+	inCheck := pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1)
+
 	// Static null move pruning
 	var staticEval int
-	if beta-alpha == 1 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && beta < MateValue-1000 {
+	if beta-alpha == 1 && !inCheck && beta < MateValue-1000 {
 		if pos.SideToMove == White {
 			staticEval = Evaluate(pos)
 		} else {
@@ -119,7 +121,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	}
 
 	// Null move logic
-	if !nullMove && depth >= 4 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && hasNonPawnMaterial(*pos, pos.SideToMove) {
+	if !nullMove && depth >= 4 && !inCheck && hasNonPawnMaterial(*pos, pos.SideToMove) {
 		R := 3
 
 		oldEnPassantSquare := pos.MakeNullMove()
@@ -134,7 +136,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	}
 
 	var moveList MoveList
-	GenerateLegalMoves(*pos, pos.SideToMove, &moveList)
+	generateLegalMoves(*pos, pos.SideToMove, inCheck, &moveList)
 	moves := moveList.Slice()
 
 	// Order moves (ttMove => captures => killers => others)
@@ -143,9 +145,10 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	})
 
 	// Check Mate/Stalemate
-	if len(moves) == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
-		return -(MateValue - ply)
-	} else if len(moves) == 0 && !pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
+	if len(moves) == 0 {
+		if inCheck {
+			return -(MateValue - ply)
+		}
 		return 0
 	}
 
@@ -252,10 +255,10 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 	isCheck := pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1)
 	if isCheck {
 		// Generate moves as usual
-		GenerateLegalMoves(*pos, pos.SideToMove, &moveList)
+		generateLegalMoves(*pos, pos.SideToMove, isCheck, &moveList)
 
 		// Check if Mate
-		if moveList.count == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
+		if moveList.count == 0 {
 			return -(MateValue - ply)
 		}
 
@@ -279,7 +282,8 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 
 	// MVV-LVA
 	sortMovesByScore(moves, func(m Move) int {
-		return moveScore(*pos, m)
+		score, _ := moveScore(*pos, m)
+		return score
 	})
 
 	for _, move := range moves {
@@ -394,18 +398,21 @@ func SearchTimed(pos Position, timeLimit time.Duration, history []uint64) (Move,
 
 // moveScore returns a priority score for move ordering: captures
 // of valuable pieces by less valuable attackers score highest (MVV-LVA).
-func moveScore(pos Position, m Move) int {
+// The second return value reports whether m is a capture (including en
+// passant), so callers that need both don't also have to call isCapture
+// and redo the same PieceAt lookups.
+func moveScore(pos Position, m Move) (score int, capture bool) {
 	captured := pos.PieceAt(m.To())
 
 	if captured == AllPieces {
 		attacker := pos.PieceAt(m.From())
 		if attacker == Pawn && m.From().File() != m.To().File() {
-			return pieceValues[Pawn]*10 - pieceValues[Pawn]
+			return pieceValues[Pawn]*10 - pieceValues[Pawn], true
 		}
-		return 0
+		return 0, false
 	}
 	attacker := pos.PieceAt(m.From())
-	return pieceValues[captured]*10 - pieceValues[attacker]
+	return pieceValues[captured]*10 - pieceValues[attacker], true
 }
 
 // isCapture reports whether move m is a capture
@@ -494,13 +501,13 @@ func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int
 		return 1_000_000
 	}
 
-	score := moveScore(pos, m)
+	score, capture := moveScore(pos, m)
 
 	if ply >= len(s.killers) {
 		return score
 	}
 
-	if !isCapture(pos, m) {
+	if !capture {
 		switch m {
 		case s.killers[ply][0]:
 			score += 50

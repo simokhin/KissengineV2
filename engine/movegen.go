@@ -120,11 +120,18 @@ func (l *MoveList) Reset() {
 // GenerateLegalMoves returns all fully legal moves for the given color in the position,
 // filtering out pseudo-legal moves that leave the moving side's king in check
 func GenerateLegalMoves(pos Position, color Color, list *MoveList) {
+	inCheck := pos.IsAttacked(pos.KingSquare(color), color^1)
+	generateLegalMoves(pos, color, inCheck, list)
+}
+
+// generateLegalMoves is GenerateLegalMoves with inCheck precomputed by the
+// caller. Negamax and Quiescence already know whether the side to move is
+// in check before generating its moves; this lets them skip the redundant
+// IsAttacked call GenerateLegalMoves would otherwise repeat.
+func generateLegalMoves(pos Position, color Color, inCheck bool, list *MoveList) {
 	var pseudo MoveList
 	GenerateMoves(pos, color, &pseudo)
 
-	kingSq := pos.KingSquare(color)
-	inCheck := pos.IsAttacked(kingSq, color^1)
 	pinned := pinnedPieces(&pos, color)
 
 	list.Reset()
