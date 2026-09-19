@@ -198,11 +198,14 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 		if nextEval >= beta {
 
-			// Store killer moves
-			if !isCapture(*pos, move) && (ply >= len(s.killers) || s.killers[ply][0] != move) {
-				s.storeKiller(ply, move)
+			if !isCapture(*pos, move) {
+				// Store killer moves
+				if ply >= len(s.killers) || s.killers[ply][0] != move {
+					s.storeKiller(ply, move)
+				}
 
-				// History heuristic
+				// History heuristic: credited even when the move is already the
+				// first killer, so moves that keep causing cutoffs keep gaining.
 				s.historyHeu[pos.SideToMove][move.From()][move.To()] += depth * depth
 			}
 
@@ -304,9 +307,13 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 	return alpha
 }
 
-// BestMove returns the best move found by a fixed-depth negamax search.
-func BestMove(ctx context.Context, pos Position, depth int, history []uint64, alpha, beta int) (Move, uint64, int) {
-	s := &SearchState{ctx: ctx}
+// BestMove returns the best move found by a fixed-depth negamax search, along
+// with the number of nodes this call searched. s carries the killer/history
+// tables, so callers running iterative deepening pass the same s to every
+// iteration and later depths reuse what earlier ones learned about good quiet
+// moves; s.nodes is reset here, so the returned count is per call.
+func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, beta int) (Move, uint64, int) {
+	s.nodes = 0
 	var moveList MoveList
 	GenerateLegalMoves(pos, pos.SideToMove, &moveList)
 	moves := moveList.Slice()
@@ -358,9 +365,11 @@ func SearchTimed(pos Position, timeLimit time.Duration, history []uint64) (Move,
 	ctx, cancel := context.WithTimeout(context.Background(), timeLimit)
 	defer cancel()
 
+	s := &SearchState{ctx: ctx}
+
 	var completedDepth int
 
-	bestMove, totalNodes, bestScore := BestMove(ctx, pos, 1, history, Minimum, Maximum)
+	bestMove, totalNodes, bestScore := BestMove(s, pos, 1, history, Minimum, Maximum)
 	if ctx.Err() == nil {
 		completedDepth = 1
 	}
@@ -373,7 +382,7 @@ func SearchTimed(pos Position, timeLimit time.Duration, history []uint64) (Move,
 			break
 		}
 
-		move, nodes, score := BestMove(ctx, pos, depth, history, alpha, beta)
+		move, nodes, score := BestMove(s, pos, depth, history, alpha, beta)
 		totalNodes += nodes
 
 		if ctx.Err() != nil {
@@ -430,17 +439,17 @@ func isCapture(pos Position, m Move) bool {
 }
 
 func SearchDepth(pos Position, maxDepth int, history []uint64) (Move, uint64, int, int) {
-	ctx := context.Background()
+	s := &SearchState{ctx: context.Background()}
 
 	var completedDepth int
-	bestMove, totalNodes, bestScore := BestMove(ctx, pos, 1, history, Minimum, Maximum)
+	bestMove, totalNodes, bestScore := BestMove(s, pos, 1, history, Minimum, Maximum)
 
 	// Aspiration window
 	windowSize := 50
 	alpha, beta := bestScore-windowSize, bestScore+windowSize
 
 	for depth := 2; depth <= maxDepth; depth++ {
-		move, nodes, score := BestMove(ctx, pos, depth, history, alpha, beta)
+		move, nodes, score := BestMove(s, pos, depth, history, alpha, beta)
 
 		totalNodes += nodes
 
@@ -514,8 +523,11 @@ func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int
 		case s.killers[ply][1]:
 			score += 40
 		default:
-			// History heuristic
-			score += min(s.historyHeu[pos.SideToMove][m.From()][m.To()]/1000, 39)
+			// History heuristic, capped below the second killer (40) so it can
+			// never outrank a killer. The divisor was picked by node counts over
+			// random positions: with 1000 only the top few percent of moves reached
+			// a nonzero score, and 30-100 all searched noticeably fewer nodes.
+			score += min(s.historyHeu[pos.SideToMove][m.From()][m.To()]/100, 39)
 		}
 	}
 
