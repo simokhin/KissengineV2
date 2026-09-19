@@ -112,6 +112,34 @@ func TestGeneratePawnCaptures(t *testing.T) {
 	}
 }
 
+func TestGenerateLegalNoisyMoves(t *testing.T) {
+	// Only the queen promotion is noisy: the king's quiet moves and the three
+	// underpromotions must be left out.
+	pos := ParseFEN("4k3/P7/8/8/8/8/8/4K3 w - - 0 1")
+
+	var list MoveList
+	GenerateLegalNoisyMoves(*pos, White, &list)
+	if list.count != 1 || list.Slice()[0] != NewPromotionMove(A7, A8, Queen) {
+		t.Fatalf("want exactly a7a8q, got %d moves", list.count)
+	}
+
+	// Captures stay in, including a capture with underpromotion.
+	pos = ParseFEN("1r2k3/P7/8/8/8/8/8/4K3 w - - 0 1")
+	GenerateLegalNoisyMoves(*pos, White, &list)
+	got := map[string]bool{}
+	for _, m := range list.Slice() {
+		got[m.UCI()] = true
+	}
+	for _, want := range []string{"a7a8q", "a7b8q", "a7b8r", "a7b8b", "a7b8n"} {
+		if !got[want] {
+			t.Errorf("missing %s in %v", want, got)
+		}
+	}
+	if got["a7a8n"] || got["a7a8r"] || got["a7a8b"] {
+		t.Errorf("quiet underpromotions must not be generated: %v", got)
+	}
+}
+
 func TestGenerateKingMoves(t *testing.T) {
 	pos := StartPos()
 

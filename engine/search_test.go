@@ -50,6 +50,37 @@ func TestPlyBeyondKillersBounds(t *testing.T) {
 	t.Logf("orderScore at ply=%d: %d", deepPly, score)
 }
 
+// TestQuiescenceSeesQuietPromotion guards against quiescence only looking at
+// captures: a pawn on the 7th with nothing to capture must still be seen
+// promoting, otherwise a search stopping right before the promotion misjudges
+// the position by about a queen.
+func TestQuiescenceSeesQuietPromotion(t *testing.T) {
+	pos := ParseFEN("4k3/P7/8/8/8/8/8/4K3 w - - 0 1")
+	standPat := Evaluate(pos)
+
+	var nodes uint64
+	score := Quiescence(context.Background(), pos, &nodes, Minimum, Maximum, 0)
+
+	if score < standPat+500 {
+		t.Errorf("quiescence score %d should be well above the static eval %d once the promotion is seen", score, standPat)
+	}
+}
+
+// TestMoveScoreQueenPromotion checks that a quiet queen promotion is ordered
+// like a big gain, while an underpromotion gets no bonus.
+func TestMoveScoreQueenPromotion(t *testing.T) {
+	pos := ParseFEN("4k3/P7/8/8/8/8/8/4K3 w - - 0 1")
+
+	queen, capture := moveScore(*pos, NewPromotionMove(A7, A8, Queen))
+	if queen <= 0 || capture {
+		t.Errorf("quiet queen promotion: want positive score and capture=false, got %d, %v", queen, capture)
+	}
+
+	if knight, _ := moveScore(*pos, NewPromotionMove(A7, A8, Knight)); knight != 0 {
+		t.Errorf("underpromotion: want score 0, got %d", knight)
+	}
+}
+
 // TestMateScorePlyAdjustment guards against a regression in the TT mate-score
 // ply adjustment: storing a mate score found deep in the tree and retrieving
 // it via transposition at a shallower ply must report the mate as closer

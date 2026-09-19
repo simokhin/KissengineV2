@@ -152,15 +152,19 @@ func generateLegalMoves(pos Position, color Color, inCheck bool, list *MoveList)
 	}
 }
 
-// GenerateLegalCaptures returns only the legal capture moves for color -
-// cheaper than GenerateLegalMoves when quiet moves aren't needed (quiescence).
-func GenerateLegalCaptures(pos Position, color Color, list *MoveList) {
+// GenerateLegalNoisyMoves returns only the legal "noisy" moves for color --
+// captures and promotions to a queen -- which is what quiescence searches when
+// not in check. Cheaper than GenerateLegalMoves since quiet moves are skipped
+// before the make/unmake legality check. Queen promotions are included so a
+// pawn about to promote isn't misjudged at the search horizon; underpromotions
+// without a capture are left out (they rarely matter and would add noise).
+func GenerateLegalNoisyMoves(pos Position, color Color, list *MoveList) {
 	var pseudo MoveList
 	GenerateMoves(pos, color, &pseudo)
 
 	list.Reset()
 	for _, m := range pseudo.Slice() {
-		if !isCapture(pos, m) {
+		if !isCapture(pos, m) && !isQueenPromotion(m) {
 			continue
 		}
 		undo := pos.MakeMove(m)

@@ -278,7 +278,7 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 			alpha = standPat
 		}
 
-		GenerateLegalCaptures(*pos, pos.SideToMove, &moveList)
+		GenerateLegalNoisyMoves(*pos, pos.SideToMove, &moveList)
 	}
 
 	moves := moveList.Slice()
@@ -411,6 +411,14 @@ func SearchTimed(pos Position, timeLimit time.Duration, history []uint64) (Move,
 // passant), so callers that need both don't also have to call isCapture
 // and redo the same PieceAt lookups.
 func moveScore(pos Position, m Move) (score int, capture bool) {
+	// A queen promotion gains about a queen minus the pawn, on the same x10
+	// scale as the capture values below; underpromotions get no bonus so they
+	// are still searched late.
+	var promotionBonus int
+	if isQueenPromotion(m) {
+		promotionBonus = (pieceValues[Queen] - pieceValues[Pawn]) * 10
+	}
+
 	captured := pos.PieceAt(m.To())
 
 	if captured == AllPieces {
@@ -418,10 +426,15 @@ func moveScore(pos Position, m Move) (score int, capture bool) {
 		if attacker == Pawn && m.From().File() != m.To().File() {
 			return pieceValues[Pawn]*10 - pieceValues[Pawn], true
 		}
-		return 0, false
+		return promotionBonus, false
 	}
 	attacker := pos.PieceAt(m.From())
-	return pieceValues[captured]*10 - pieceValues[attacker], true
+	return pieceValues[captured]*10 - pieceValues[attacker] + promotionBonus, true
+}
+
+// isQueenPromotion reports whether move m promotes a pawn to a queen.
+func isQueenPromotion(m Move) bool {
+	return m.IsPromotion() && m.Promotion() == Queen
 }
 
 // isCapture reports whether move m is a capture
