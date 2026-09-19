@@ -158,6 +158,8 @@ func generateLegalMoves(pos Position, color Color, inCheck bool, list *MoveList)
 // before the make/unmake legality check. Queen promotions are included so a
 // pawn about to promote isn't misjudged at the search horizon; underpromotions
 // without a capture are left out (they rarely matter and would add noise).
+// Captures that lose material in the exchange on their square (SEE < 0) are
+// pruned too, again before the legality check, so they cost no make/unmake.
 func GenerateLegalNoisyMoves(pos Position, color Color, list *MoveList) {
 	var pseudo MoveList
 	GenerateMoves(pos, color, &pseudo)
@@ -165,6 +167,9 @@ func GenerateLegalNoisyMoves(pos Position, color Color, list *MoveList) {
 	list.Reset()
 	for _, m := range pseudo.Slice() {
 		if !isCapture(pos, m) && !isQueenPromotion(m) {
+			continue
+		}
+		if isLosingCapture(&pos, m) {
 			continue
 		}
 		undo := pos.MakeMove(m)
@@ -457,7 +462,30 @@ func PawnCaptures(pos Position, color Color) Bitboard {
 	return PawnCapturesLeft(pos, color) | PawnCapturesRight(pos, color)
 }
 
-// init populates the knightAttacks and kingAttacks table for all 64 squares.
+// PawnAttacks[color][sq] is the set of squares attacked by a pawn of the given
+// color standing on sq. A pawn of color c attacks square s exactly when it
+// stands on PawnAttacks[c^1][s], which is how IsAttacked and attackersTo use it.
+var PawnAttacks [2][64]Bitboard
+
+// pawnAttacksFrom returns the squares a pawn of color c on square s attacks.
+func pawnAttacksFrom(s Square, c Color) Bitboard {
+	rank := s.Rank() + 1
+	if c == Black {
+		rank = s.Rank() - 1
+	}
+
+	var attacks Bitboard
+	for _, df := range [2]int{-1, 1} {
+		file := s.File() + df
+		if onBoard(file, rank) {
+			attacks |= Square(rank*8 + file).BB()
+		}
+	}
+
+	return attacks
+}
+
+// init populates the knight, king and pawn attack tables for all 64 squares.
 func init() {
 	for i := range KnightAttacks {
 		KnightAttacks[i] = KnightAttacksFrom(Square(i))
@@ -465,5 +493,11 @@ func init() {
 
 	for i := range KingAttacks {
 		KingAttacks[i] = KingAttacksFrom(Square(i))
+	}
+
+	for c := range PawnAttacks {
+		for i := range PawnAttacks[c] {
+			PawnAttacks[c][i] = pawnAttacksFrom(Square(i), Color(c))
+		}
 	}
 }

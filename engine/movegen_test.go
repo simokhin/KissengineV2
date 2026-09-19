@@ -140,6 +140,24 @@ func TestGenerateLegalNoisyMoves(t *testing.T) {
 	}
 }
 
+func TestGenerateLegalNoisyMovesPrunesLosingCaptures(t *testing.T) {
+	var list MoveList
+
+	// Qxd5 wins a pawn but loses the queen to cxd5: pruned.
+	pos := ParseFEN("4k3/8/2p5/3p4/8/8/8/3QK3 w - - 0 1")
+	GenerateLegalNoisyMoves(*pos, White, &list)
+	if list.count != 0 {
+		t.Errorf("losing queen capture must be pruned, got %d moves", list.count)
+	}
+
+	// The same capture of an undefended pawn is kept.
+	pos = ParseFEN("4k3/8/8/3p4/8/8/8/3QK3 w - - 0 1")
+	GenerateLegalNoisyMoves(*pos, White, &list)
+	if list.count != 1 || list.Slice()[0] != NewMove(D1, D5) {
+		t.Errorf("want exactly d1d5, got %d moves", list.count)
+	}
+}
+
 func TestGenerateKingMoves(t *testing.T) {
 	pos := StartPos()
 

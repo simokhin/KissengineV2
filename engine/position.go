@@ -220,7 +220,9 @@ func (p *Position) MakeMove(m Move) UndoPosition {
 // IsAttacked reports whether square s is attacked by any piece
 // of the given color.
 func (p *Position) IsAttacked(s Square, byColor Color) bool {
-	if KnightAttacks[s]&p.Pieces[Knight]&p.Colors[byColor] != 0 {
+	if PawnAttacks[byColor^1][s]&p.Pieces[Pawn]&p.Colors[byColor] != 0 {
+		return true
+	} else if KnightAttacks[s]&p.Pieces[Knight]&p.Colors[byColor] != 0 {
 		return true
 	} else if KingAttacks[s]&p.Pieces[King]&p.Colors[byColor] != 0 {
 		return true
@@ -236,26 +238,7 @@ func (p *Position) IsAttacked(s Square, byColor Color) bool {
 	bishopLikeAttackers := p.Pieces[Bishop] | p.Pieces[Queen]
 	bishopLikeAttackers &= p.Colors[byColor]
 
-	if bishopAttacksMagic(s, p.Pieces[AllPieces])&bishopLikeAttackers != 0 {
-		return true
-	}
-
-	pawnRank := s.Rank() - 1
-	if byColor == Black {
-		pawnRank = s.Rank() + 1
-	}
-
-	for _, df := range []int{-1, 1} {
-		file := s.File() + df
-		if onBoard(file, pawnRank) {
-			sq := Square(pawnRank*8 + file)
-			if p.Pieces[Pawn]&p.Colors[byColor]&sq.BB() != 0 {
-				return true
-			}
-		}
-	}
-
-	return false
+	return bishopAttacksMagic(s, p.Pieces[AllPieces])&bishopLikeAttackers != 0
 }
 
 func (p *Position) UnmakeMove(m Move, undo UndoPosition) {

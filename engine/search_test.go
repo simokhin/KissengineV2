@@ -81,6 +81,30 @@ func TestMoveScoreQueenPromotion(t *testing.T) {
 	}
 }
 
+// TestOrderScoreLosingCaptureLast checks the ordering bands: a winning capture
+// ranks above quiet moves, a capture that loses material by SEE ranks below all
+// of them (even ones with no history or killer bonus), and the TT move is first.
+func TestOrderScoreLosingCaptureLast(t *testing.T) {
+	s := &SearchState{ctx: context.Background()}
+
+	losing := ParseFEN("4k3/8/2p5/3p4/8/8/8/3QK3 w - - 0 1")
+	quiet := s.orderScore(*losing, 0, NewMove(E1, F1), Move(0))
+	bad := s.orderScore(*losing, 0, NewMove(D1, D5), Move(0))
+	if bad >= quiet {
+		t.Errorf("losing capture scored %d, must rank below a quiet move (%d)", bad, quiet)
+	}
+	if tt := s.orderScore(*losing, 0, NewMove(D1, D5), NewMove(D1, D5)); tt <= quiet {
+		t.Errorf("TT move scored %d, must rank above everything (quiet %d)", tt, quiet)
+	}
+
+	winning := ParseFEN("4k3/8/8/3p4/8/8/8/3QK3 w - - 0 1")
+	quiet = s.orderScore(*winning, 0, NewMove(E1, F1), Move(0))
+	good := s.orderScore(*winning, 0, NewMove(D1, D5), Move(0))
+	if good <= quiet {
+		t.Errorf("winning capture scored %d, must rank above a quiet move (%d)", good, quiet)
+	}
+}
+
 // TestMateScorePlyAdjustment guards against a regression in the TT mate-score
 // ply adjustment: storing a mate score found deep in the tree and retrieving
 // it via transposition at a shallower ply must report the mate as closer

@@ -12,6 +12,12 @@ const (
 	Maximum   = MateValue + 1
 )
 
+// losingCaptureOffset is subtracted from the MVV-LVA score of a capture that
+// loses material by SEE. It must exceed the largest MVV-LVA score (~9000) so
+// every losing capture ranks below every quiet move (score >= 0), while staying
+// far below the TT move's 1_000_000.
+const losingCaptureOffset = 100_000
+
 // scoredMove pairs a move with its precomputed ordering score.
 type scoredMove struct {
 	move  Move
@@ -524,6 +530,12 @@ func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int
 	}
 
 	score, capture := moveScore(pos, m)
+
+	// A capture that loses material in the exchange on its square is tried
+	// after every quiet move, killers and history moves included.
+	if capture && isLosingCapture(&pos, m) {
+		score -= losingCaptureOffset
+	}
 
 	if ply >= len(s.killers) {
 		return score
