@@ -16,6 +16,12 @@ type Position struct {
 	FiftyMovesRule int
 
 	mailbox [64]uint8
+
+	// hash is the position's Zobrist hash, maintained incrementally by
+	// PutPiece/RemovePiece and by the side-to-move/castling/en-passant
+	// updates in MakeMove/UnmakeMove/MakeNullMove/UnmakeNullMove, rather
+	// than recomputed from scratch on every Hash() call.
+	hash uint64
 }
 
 type UndoPosition struct {
@@ -32,6 +38,15 @@ func (p *Position) PutPiece(s Square, c Color, pt PieceType) {
 	p.Pieces[pt] |= s.BB()
 	p.Colors[c] |= s.BB()
 	p.Pieces[AllPieces] |= s.BB()
+	p.hash ^= zobristPieces[c][pt][s]
+}
+
+// RemovePiece removes the piece of the given color and type from square s.
+func (p *Position) RemovePiece(s Square, c Color, pt PieceType) {
+	p.Pieces[pt] &= ^s.BB()
+	p.Colors[c] &= ^s.BB()
+	p.Pieces[AllPieces] &= ^s.BB()
+	p.hash ^= zobristPieces[c][pt][s]
 }
 
 // StartPos returns a new Position set up in the standard chess starting configuration.
@@ -40,6 +55,9 @@ func StartPos() *Position {
 
 	position.EnPassant = NoSquare
 	position.Castling = WhiteKingside | WhiteQueenside | BlackKingside | BlackQueenside
+	for castle := range 4 {
+		position.hash ^= zobristCastling[castle]
+	}
 
 	// White pawns
 	for s := A2; s <= H2; s++ {
@@ -113,14 +131,8 @@ func (p *Position) MakeMove(m Move) UndoPosition {
 				rookTo = to + 1
 			}
 
-			p.Pieces[Rook] &= ^rookFrom.BB()
-			p.Colors[color] &= ^rookFrom.BB()
-			p.Pieces[Rook] |= rookTo.BB()
-			p.Colors[color] |= rookTo.BB()
-			p.Pieces[AllPieces] &= ^rookFrom.BB()
-			p.Pieces[AllPieces] |= rookTo.BB()
-
-			p.mailbox[rookTo] = uint8(Rook)
+			p.RemovePiece(rookFrom, color, Rook)
+			p.PutPiece(rookTo, color, Rook)
 		}
 		if color == White {
 			p.Castling &^= WhiteKingside | WhiteQueenside
@@ -142,12 +154,24 @@ func (p *Position) MakeMove(m Move) UndoPosition {
 		p.Castling &^= BlackKingside
 	}
 
+	changedCastling := undo.Castling ^ p.Castling
+	for castle := range 4 {
+		if changedCastling&CastlingRights(1<<castle) != 0 {
+			p.hash ^= zobristCastling[castle]
+		}
+	}
+
+	undo.EnPassant = p.EnPassant
 	if movingPiece == Pawn && (to-from == 16 || from-to == 16) {
-		undo.EnPassant = p.EnPassant
 		p.EnPassant = (from + to) / 2
 	} else {
-		undo.EnPassant = p.EnPassant
 		p.EnPassant = NoSquare
+	}
+	if undo.EnPassant != NoSquare {
+		p.hash ^= zobristEnPassantFile[undo.EnPassant.File()]
+	}
+	if p.EnPassant != NoSquare {
+		p.hash ^= zobristEnPassantFile[p.EnPassant.File()]
 	}
 
 	capturedPiece := p.PieceAt(to)
@@ -164,8 +188,7 @@ func (p *Position) MakeMove(m Move) UndoPosition {
 	}
 
 	if capturedPiece != AllPieces {
-		p.Pieces[capturedPiece] &= ^to.BB()
-		p.Colors[color^1] &= ^to.BB()
+		p.RemovePiece(to, color^1, capturedPiece)
 	}
 
 	if movingPiece == Pawn && from.File() != to.File() && capturedPiece == AllPieces {
@@ -177,12 +200,10 @@ func (p *Position) MakeMove(m Move) UndoPosition {
 		undo.CapturedPiece = Pawn
 		undo.CapturedSquare = capturedSquare
 
-		p.Pieces[Pawn] &= ^capturedSquare.BB()
-		p.Colors[color^1] &= ^capturedSquare.BB()
-		p.Pieces[AllPieces] &= ^capturedSquare.BB()
+		p.RemovePiece(capturedSquare, color^1, Pawn)
 	}
 
-	p.Pieces[movingPiece] &= ^from.BB()
+	p.RemovePiece(from, color, movingPiece)
 
 	if m.IsPromotion() {
 		p.PutPiece(to, color, m.Promotion())
@@ -190,11 +211,7 @@ func (p *Position) MakeMove(m Move) UndoPosition {
 		p.PutPiece(to, color, movingPiece)
 	}
 
-	p.Colors[color] ^= from.BB()
-	p.Colors[color] |= to.BB()
-	p.Pieces[AllPieces] ^= from.BB()
-	p.Pieces[AllPieces] |= to.BB()
-
+	p.hash ^= zobristSideToMove
 	p.SideToMove ^= 1
 
 	return undo
@@ -242,9 +259,25 @@ func (p *Position) IsAttacked(s Square, byColor Color) bool {
 }
 
 func (p *Position) UnmakeMove(m Move, undo UndoPosition) {
+	changedCastling := p.Castling ^ undo.Castling
+	for castle := range 4 {
+		if changedCastling&CastlingRights(1<<castle) != 0 {
+			p.hash ^= zobristCastling[castle]
+		}
+	}
 	p.Castling = undo.Castling
+
+	if p.EnPassant != NoSquare {
+		p.hash ^= zobristEnPassantFile[p.EnPassant.File()]
+	}
+	if undo.EnPassant != NoSquare {
+		p.hash ^= zobristEnPassantFile[undo.EnPassant.File()]
+	}
 	p.EnPassant = undo.EnPassant
+
 	p.FiftyMovesRule = undo.FiftyMovesRule
+
+	p.hash ^= zobristSideToMove
 	p.SideToMove ^= 1
 
 	to := m.To()
@@ -254,9 +287,7 @@ func (p *Position) UnmakeMove(m Move, undo UndoPosition) {
 	piece := p.PieceAt(to)
 
 	// Remove piece from square where it moved to
-	p.Pieces[piece] &= ^to.BB()
-	p.Colors[color] &= ^to.BB()
-	p.Pieces[AllPieces] &= ^to.BB()
+	p.RemovePiece(to, color, piece)
 
 	if m.IsPromotion() {
 		p.PutPiece(from, color, Pawn)
@@ -280,10 +311,7 @@ func (p *Position) UnmakeMove(m Move, undo UndoPosition) {
 				rookTo = to + 1
 			}
 
-			p.Pieces[Rook] &= ^rookTo.BB()
-			p.Colors[color] &= ^rookTo.BB()
-			p.Pieces[AllPieces] &= ^rookTo.BB()
-
+			p.RemovePiece(rookTo, color, Rook)
 			p.PutPiece(rookFrom, color, Rook)
 		}
 	}

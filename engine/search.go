@@ -420,16 +420,25 @@ func SearchDepth(pos Position, maxDepth int, history []uint64) (Move, uint64, in
 }
 
 func (p *Position) MakeNullMove() Square {
+	p.hash ^= zobristSideToMove
 	p.SideToMove ^= 1
 
 	oldEnPassant := p.EnPassant
+	if p.EnPassant != NoSquare {
+		p.hash ^= zobristEnPassantFile[p.EnPassant.File()]
+	}
 	p.EnPassant = NoSquare
 
 	return oldEnPassant
 }
 
 func (p *Position) UnmakeNullMove(oldEnPassant Square) {
+	p.hash ^= zobristSideToMove
 	p.SideToMove ^= 1
+
+	if oldEnPassant != NoSquare {
+		p.hash ^= zobristEnPassantFile[oldEnPassant.File()]
+	}
 	p.EnPassant = oldEnPassant
 }
 

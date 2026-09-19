@@ -63,6 +63,7 @@ func ParseFEN(fen string) *Position {
 		pos.SideToMove = White
 	case "b":
 		pos.SideToMove = Black
+		pos.hash ^= zobristSideToMove
 	}
 
 	for i := 0; i < len(fields[2]); i++ {
@@ -77,11 +78,17 @@ func ParseFEN(fen string) *Position {
 			pos.Castling |= BlackQueenside
 		}
 	}
+	for castle := range 4 {
+		if pos.Castling&CastlingRights(1<<castle) != 0 {
+			pos.hash ^= zobristCastling[castle]
+		}
+	}
 
 	if fields[3] == "-" {
 		pos.EnPassant = NoSquare
 	} else {
 		pos.EnPassant = ParseSquare(fields[3])
+		pos.hash ^= zobristEnPassantFile[pos.EnPassant.File()]
 	}
 
 	fiftyMovesRule, _ := strconv.Atoi(fields[4])

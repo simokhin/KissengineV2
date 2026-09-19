@@ -16,9 +16,19 @@ var zobristCastling [4]uint64
 // capture might be available on.
 var zobristEnPassantFile [8]uint64
 
-// Hash computes the Zobrist hash of the position from scratch, combining
-// piece placement, side to move, castling rights, and en passant file.
+// Hash returns the position's Zobrist hash. It is maintained incrementally
+// by PutPiece/RemovePiece (piece placement) and by the side-to-move/
+// castling/en-passant updates in MakeMove, UnmakeMove, MakeNullMove and
+// UnmakeNullMove, rather than recomputed on every call.
 func (p *Position) Hash() uint64 {
+	return p.hash
+}
+
+// hashFromScratch recomputes the Zobrist hash by scanning the whole
+// position, independently of the incrementally-maintained p.hash field.
+// It exists only so tests can check the incremental maintenance against an
+// independent computation -- never call this on a search hot path.
+func (p *Position) hashFromScratch() uint64 {
 	var hash uint64
 
 	for color := range 2 {
