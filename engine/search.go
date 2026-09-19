@@ -105,7 +105,9 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		}
 	}
 
-	moves := GenerateLegalMoves(*pos, pos.SideToMove)
+	var moveList MoveList
+	GenerateLegalMoves(*pos, pos.SideToMove, &moveList)
+	moves := moveList.Slice()
 
 	// Order moves (ttMove => captures => killers => others)
 	slices.SortFunc(moves, func(a, b Move) int {
@@ -215,17 +217,17 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 	default:
 	}
 
-	var moves []Move
+	var moveList MoveList
 
 	var standPat int
 
 	isCheck := pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1)
 	if isCheck {
 		// Generate moves as usual
-		moves = GenerateLegalMoves(*pos, pos.SideToMove)
+		GenerateLegalMoves(*pos, pos.SideToMove, &moveList)
 
 		// Check if Mate
-		if len(moves) == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
+		if moveList.count == 0 && pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {
 			return -(MateValue - ply)
 		}
 
@@ -242,8 +244,10 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 			alpha = standPat
 		}
 
-		moves = GenerateLegalCaptures(*pos, pos.SideToMove)
+		GenerateLegalCaptures(*pos, pos.SideToMove, &moveList)
 	}
+
+	moves := moveList.Slice()
 
 	// MVV-LVA
 	slices.SortFunc(moves, func(a, b Move) int {
@@ -271,7 +275,9 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 // BestMove returns the best move found by a fixed-depth negamax search.
 func BestMove(ctx context.Context, pos Position, depth int, history []uint64, alpha, beta int) (Move, uint64, int) {
 	s := &SearchState{ctx: ctx}
-	moves := GenerateLegalMoves(pos, pos.SideToMove)
+	var moveList MoveList
+	GenerateLegalMoves(pos, pos.SideToMove, &moveList)
+	moves := moveList.Slice()
 
 	if len(moves) == 0 {
 		if pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) {

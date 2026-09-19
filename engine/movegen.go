@@ -91,121 +91,124 @@ var KnightAttacks [64]Bitboard
 // KingAttacks is a precomputed table of king attack bitboards indexed by square.
 var KingAttacks [64]Bitboard
 
+// maxMoves bounds the fixed-size MoveList buffer. 218 is the documented
+// maximum number of *legal* moves in any reachable chess position, but
+// MoveList also holds pseudo-legal move lists (GenerateMoves), which can
+// exceed the legal count since illegal moves haven't been filtered out yet
+// -- so this leaves headroom above 218 rather than using it directly.
+const maxMoves = 256
+
+// MoveList is a fixed capacity move buffer.
+type MoveList struct {
+	moves [maxMoves]Move
+	count int
+}
+
+func (l *MoveList) Add(m Move) {
+	l.moves[l.count] = m
+	l.count++
+}
+
+func (l *MoveList) Slice() []Move {
+	return l.moves[:l.count]
+}
+
+func (l *MoveList) Reset() {
+	l.count = 0
+}
+
 // GenerateLegalMoves returns all fully legal moves for the given color in the position,
 // filtering out pseudo-legal moves that leave the moving side's king in check
-func GenerateLegalMoves(pos Position, color Color) []Move {
-	pseudoLMoves := GenerateMoves(pos, color)
+func GenerateLegalMoves(pos Position, color Color, list *MoveList) {
+	var pseudo MoveList
+	GenerateMoves(pos, color, &pseudo)
 
 	kingSq := pos.KingSquare(color)
 	inCheck := pos.IsAttacked(kingSq, color^1)
 	pinned := pinnedPieces(&pos, color)
 
-	var legalmoves []Move
-
-	for _, m := range pseudoLMoves {
+	list.Reset()
+	for _, m := range pseudo.Slice() {
 		piece := pos.PieceAt(m.From())
 		isEnPassant := piece == Pawn && m.From().File() != m.To().File() && pos.PieceAt(m.To()) == AllPieces
 
 		if !inCheck && piece != King && pinned&m.From().BB() == 0 && !isEnPassant {
-			legalmoves = append(legalmoves, m)
+			list.Add(m)
 			continue
 		}
 
 		undo := pos.MakeMove(m)
 		if !pos.IsAttacked(pos.KingSquare(color), color^1) {
-			legalmoves = append(legalmoves, m)
+			list.Add(m)
 		}
 		pos.UnmakeMove(m, undo)
 	}
-
-	return legalmoves
 }
 
 // GenerateLegalCaptures returns only the legal capture moves for color -
 // cheaper than GenerateLegalMoves when quiet moves aren't needed (quiescence).
-func GenerateLegalCaptures(pos Position, color Color) []Move {
-	pseudo := GenerateMoves(pos, color)
+func GenerateLegalCaptures(pos Position, color Color, list *MoveList) {
+	var pseudo MoveList
+	GenerateMoves(pos, color, &pseudo)
 
-	var captures []Move
-	for _, m := range pseudo {
+	list.Reset()
+	for _, m := range pseudo.Slice() {
 		if !isCapture(pos, m) {
 			continue
 		}
 		undo := pos.MakeMove(m)
 		if !pos.IsAttacked(pos.KingSquare(color), color^1) {
-			captures = append(captures, m)
+			list.Add(m)
 		}
 		pos.UnmakeMove(m, undo)
 	}
-
-	return captures
 }
 
-// GenerateMoves returns all pseudo-legal moves for the given color in the position.
-func GenerateMoves(pos Position, color Color) []Move {
-	var moves []Move
-
-	pawnMoves := GeneratePawnMoves(pos, color)
-	moves = append(moves, pawnMoves...)
-
-	kingMoves := GenerateKingMoves(pos, color)
-	moves = append(moves, kingMoves...)
-
-	knightMoves := GenerateKnightMoves(pos, color)
-	moves = append(moves, knightMoves...)
-
-	bishopMoves := GenerateBishopMoves(pos, color)
-	moves = append(moves, bishopMoves...)
-
-	rookMoves := GenerateRookMoves(pos, color)
-	moves = append(moves, rookMoves...)
-
-	queenMoves := GenerateQueenMoves(pos, color)
-	moves = append(moves, queenMoves...)
-
-	castleMoves := GenerateCastleMoves(pos, color)
-	moves = append(moves, castleMoves...)
-
-	return moves
+// GenerateMoves appends all pseudo-legal moves for the given color in the
+// position to list. Does not reset list first, so callers that want only
+// this call's moves must reset beforehand.
+func GenerateMoves(pos Position, color Color, list *MoveList) {
+	GeneratePawnMoves(pos, color, list)
+	GenerateKingMoves(pos, color, list)
+	GenerateKnightMoves(pos, color, list)
+	GenerateBishopMoves(pos, color, list)
+	GenerateRookMoves(pos, color, list)
+	GenerateQueenMoves(pos, color, list)
+	GenerateCastleMoves(pos, color, list)
 }
 
-// GenerateCastleMoves returns all pseudo-legal castling moves for the given color in the position.
-func GenerateCastleMoves(pos Position, color Color) []Move {
-	var moves []Move
-
+// GenerateCastleMoves appends all pseudo-legal castling moves for the given color in the position to list.
+func GenerateCastleMoves(pos Position, color Color, list *MoveList) {
 	if color == White {
 		if pos.Castling&WhiteKingside != 0 &&
 			pos.PieceAt(F1) == AllPieces && pos.PieceAt(G1) == AllPieces &&
 			!pos.IsAttacked(E1, Black) && !pos.IsAttacked(F1, Black) && !pos.IsAttacked(G1, Black) {
-			moves = append(moves, NewMove(E1, G1))
+			list.Add(NewMove(E1, G1))
 		}
 
 		if pos.Castling&WhiteQueenside != 0 &&
 			pos.PieceAt(D1) == AllPieces && pos.PieceAt(C1) == AllPieces && pos.PieceAt(B1) == AllPieces &&
 			!pos.IsAttacked(E1, Black) && !pos.IsAttacked(D1, Black) && !pos.IsAttacked(C1, Black) {
-			moves = append(moves, NewMove(E1, C1))
+			list.Add(NewMove(E1, C1))
 		}
 	} else {
 		if pos.Castling&BlackKingside != 0 &&
 			pos.PieceAt(F8) == AllPieces && pos.PieceAt(G8) == AllPieces &&
 			!pos.IsAttacked(E8, White) && !pos.IsAttacked(F8, White) && !pos.IsAttacked(G8, White) {
-			moves = append(moves, NewMove(E8, G8))
+			list.Add(NewMove(E8, G8))
 		}
 
 		if pos.Castling&BlackQueenside != 0 &&
 			pos.PieceAt(D8) == AllPieces && pos.PieceAt(C8) == AllPieces && pos.PieceAt(B8) == AllPieces &&
 			!pos.IsAttacked(E8, White) && !pos.IsAttacked(D8, White) && !pos.IsAttacked(C8, White) {
-			moves = append(moves, NewMove(E8, C8))
+			list.Add(NewMove(E8, C8))
 		}
 	}
-
-	return moves
 }
 
-// GenerateQueenMoves returns all pseudo-legal queen moves for the given color
-// in the position
-func GenerateQueenMoves(pos Position, color Color) []Move {
-	var moves []Move
+// GenerateQueenMoves appends all pseudo-legal queen moves for the given color
+// in the position to list.
+func GenerateQueenMoves(pos Position, color Color, list *MoveList) {
 	queen := pos.Pieces[Queen] & pos.Colors[color]
 
 	for queen != 0 {
@@ -214,18 +217,14 @@ func GenerateQueenMoves(pos Position, color Color) []Move {
 
 		for attacks != 0 {
 			to := attacks.PopLSB()
-			m := NewMove(from, to)
-			moves = append(moves, m)
+			list.Add(NewMove(from, to))
 		}
 	}
-
-	return moves
 }
 
-// GenerateRookMoves returns all pseudo-legal rook moves for the given color
-// in the position
-func GenerateRookMoves(pos Position, color Color) []Move {
-	var moves []Move
+// GenerateRookMoves appends all pseudo-legal rook moves for the given color
+// in the position to list.
+func GenerateRookMoves(pos Position, color Color, list *MoveList) {
 	rooks := pos.Pieces[Rook] & pos.Colors[color]
 
 	for rooks != 0 {
@@ -234,18 +233,14 @@ func GenerateRookMoves(pos Position, color Color) []Move {
 
 		for attacks != 0 {
 			to := attacks.PopLSB()
-			m := NewMove(from, to)
-			moves = append(moves, m)
+			list.Add(NewMove(from, to))
 		}
 	}
-
-	return moves
 }
 
-// GenerateBishopMoves returns all pseudo-legal bishop moves for the given color
-// in the position
-func GenerateBishopMoves(pos Position, color Color) []Move {
-	var moves []Move
+// GenerateBishopMoves appends all pseudo-legal bishop moves for the given color
+// in the position to list.
+func GenerateBishopMoves(pos Position, color Color, list *MoveList) {
 	bishops := pos.Pieces[Bishop] & pos.Colors[color]
 
 	for bishops != 0 {
@@ -254,39 +249,33 @@ func GenerateBishopMoves(pos Position, color Color) []Move {
 
 		for attacks != 0 {
 			to := attacks.PopLSB()
-			m := NewMove(from, to)
-			moves = append(moves, m)
+			list.Add(NewMove(from, to))
 		}
 	}
-
-	return moves
 }
 
-// appendPawnMove appends the move from-to to moves, expanding it into the
+// appendPawnMove adds the move from-to to list, expanding it into the
 // four promotion moves if to is on the last rank for the given color.
-func appendPawnMove(moves []Move, from, to Square, color Color) []Move {
+func appendPawnMove(list *MoveList, from, to Square, color Color) {
 	promotionRank := 7
 	if color == Black {
 		promotionRank = 0
 	}
 
 	if to.Rank() != promotionRank {
-		return append(moves, NewMove(from, to))
+		list.Add(NewMove(from, to))
+		return
 	}
 
-	return append(moves,
-		NewPromotionMove(from, to, Queen),
-		NewPromotionMove(from, to, Rook),
-		NewPromotionMove(from, to, Bishop),
-		NewPromotionMove(from, to, Knight),
-	)
+	list.Add(NewPromotionMove(from, to, Queen))
+	list.Add(NewPromotionMove(from, to, Rook))
+	list.Add(NewPromotionMove(from, to, Bishop))
+	list.Add(NewPromotionMove(from, to, Knight))
 }
 
-// GeneratePawnMoves returns all pseudo-legal pawn pushes and captures
-// for the given color in the position.
-func GeneratePawnMoves(pos Position, color Color) []Move {
-	var moves []Move
-
+// GeneratePawnMoves appends all pseudo-legal pawn pushes and captures
+// for the given color in the position to list.
+func GeneratePawnMoves(pos Position, color Color, list *MoveList) {
 	pawnPushes := PawnPush(pos, color)
 	doublePawnPushes := DoublePawnPush(pos, color)
 
@@ -303,7 +292,7 @@ func GeneratePawnMoves(pos Position, color Color) []Move {
 			from = to + 8
 		}
 
-		moves = appendPawnMove(moves, from, to, color)
+		appendPawnMove(list, from, to, color)
 	}
 
 	for doublePawnPushes != 0 {
@@ -316,8 +305,7 @@ func GeneratePawnMoves(pos Position, color Color) []Move {
 			from = to + 16
 		}
 
-		m := NewMove(from, to)
-		moves = append(moves, m)
+		list.Add(NewMove(from, to))
 	}
 
 	for pawnCapturesLeft != 0 {
@@ -330,7 +318,7 @@ func GeneratePawnMoves(pos Position, color Color) []Move {
 			from = to + 9
 		}
 
-		moves = appendPawnMove(moves, from, to, color)
+		appendPawnMove(list, from, to, color)
 	}
 
 	for pawnCapturesRight != 0 {
@@ -343,15 +331,12 @@ func GeneratePawnMoves(pos Position, color Color) []Move {
 			from = to + 7
 		}
 
-		moves = appendPawnMove(moves, from, to, color)
+		appendPawnMove(list, from, to, color)
 	}
-
-	return moves
 }
 
-// GenerateKingMoves returns all pseudo-legal king moves for the given color in the position.
-func GenerateKingMoves(pos Position, color Color) []Move {
-	var moves []Move
+// GenerateKingMoves appends all pseudo-legal king moves for the given color in the position to list.
+func GenerateKingMoves(pos Position, color Color, list *MoveList) {
 	king := pos.Pieces[King] & pos.Colors[color]
 
 	from := king.PopLSB()
@@ -359,16 +344,12 @@ func GenerateKingMoves(pos Position, color Color) []Move {
 
 	for kingAttacks != 0 {
 		to := kingAttacks.PopLSB()
-		m := NewMove(from, to)
-		moves = append(moves, m)
+		list.Add(NewMove(from, to))
 	}
-
-	return moves
 }
 
-// GenerateKnightMoves returns all pseudo-legal knight moves for the given color in the position.
-func GenerateKnightMoves(pos Position, color Color) []Move {
-	var moves []Move
+// GenerateKnightMoves appends all pseudo-legal knight moves for the given color in the position to list.
+func GenerateKnightMoves(pos Position, color Color, list *MoveList) {
 	knights := pos.Pieces[Knight] & pos.Colors[color]
 
 	for knights != 0 {
@@ -377,12 +358,9 @@ func GenerateKnightMoves(pos Position, color Color) []Move {
 
 		for attacks != 0 {
 			to := attacks.PopLSB()
-			m := NewMove(from, to)
-			moves = append(moves, m)
+			list.Add(NewMove(from, to))
 		}
 	}
-
-	return moves
 }
 
 // KnightAttacksFrom returns the bitboard of squares a knight on square s can attack.

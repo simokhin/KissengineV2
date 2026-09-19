@@ -9,9 +9,10 @@ func perft(pos Position, depth int) uint64 {
 		return 1
 	}
 
-	moves := GenerateLegalMoves(pos, pos.SideToMove)
+	var moveList MoveList
+	GenerateLegalMoves(pos, pos.SideToMove, &moveList)
 
-	for _, move := range moves {
+	for _, move := range moveList.Slice() {
 		newPos := pos
 		newPos.MakeMove(move)
 		nodes += perft(newPos, depth-1)

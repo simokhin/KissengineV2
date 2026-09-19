@@ -26,9 +26,10 @@ func TestGeneratePromotionMove(t *testing.T) {
 	pos := Position{}
 	pos.PutPiece(A7, White, Pawn)
 
-	moves := GeneratePawnMoves(pos, White)
-	if len(moves) != 4 {
-		t.Fatalf("want 4, get %d", len(moves))
+	var list MoveList
+	GeneratePawnMoves(pos, White, &list)
+	if list.count != 4 {
+		t.Fatalf("want 4, get %d", list.count)
 	}
 
 }

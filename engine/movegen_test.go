@@ -5,36 +5,40 @@ import "testing"
 func TestGenerateMoves(t *testing.T) {
 	pos := StartPos()
 
-	moves := GenerateMoves(*pos, White)
-	if len(moves) != 20 {
-		t.Fatalf("want 20, get %d", len(moves))
+	var list MoveList
+	GenerateMoves(*pos, White, &list)
+	if list.count != 20 {
+		t.Fatalf("want 20, get %d", list.count)
 	}
 }
 
 func TestGenerateRookMoves(t *testing.T) {
 	pos := StartPos()
 
-	moves := GenerateRookMoves(*pos, White)
-	if len(moves) != 0 {
-		t.Fatalf("want 0, get %d", len(moves))
+	var list MoveList
+	GenerateRookMoves(*pos, White, &list)
+	if list.count != 0 {
+		t.Fatalf("want 0, get %d", list.count)
 	}
 }
 
 func TestGenerateQueenMoves(t *testing.T) {
 	pos := StartPos()
 
-	moves := GenerateQueenMoves(*pos, White)
-	if len(moves) != 0 {
-		t.Fatalf("want 0, get %d", len(moves))
+	var list MoveList
+	GenerateQueenMoves(*pos, White, &list)
+	if list.count != 0 {
+		t.Fatalf("want 0, get %d", list.count)
 	}
 }
 
 func TestGenerateBishopMoves(t *testing.T) {
 	pos := StartPos()
 
-	moves := GenerateBishopMoves(*pos, White)
-	if len(moves) != 0 {
-		t.Fatalf("want 0, get %d", len(moves))
+	var list MoveList
+	GenerateBishopMoves(*pos, White, &list)
+	if list.count != 0 {
+		t.Fatalf("want 0, get %d", list.count)
 	}
 }
 
@@ -81,14 +85,16 @@ func TestPawnPush(t *testing.T) {
 func TestGeneratePawnMoves(t *testing.T) {
 	pos := StartPos()
 
-	moves := GeneratePawnMoves(*pos, White)
-	if len(moves) != 16 {
-		t.Fatalf("want 16, get %d", len(moves))
+	var list MoveList
+	GeneratePawnMoves(*pos, White, &list)
+	if list.count != 16 {
+		t.Fatalf("want 16, get %d", list.count)
 	}
 
-	moves = GeneratePawnMoves(*pos, Black)
-	if len(moves) != 16 {
-		t.Fatalf("want 16, get %d", len(moves))
+	list.Reset()
+	GeneratePawnMoves(*pos, Black, &list)
+	if list.count != 16 {
+		t.Fatalf("want 16, get %d", list.count)
 	}
 }
 
@@ -99,27 +105,30 @@ func TestGeneratePawnCaptures(t *testing.T) {
 	pos.PutPiece(B4, White, Pawn)
 	pos.PutPiece(A4, White, Pawn)
 
-	pawnCaptures := GeneratePawnMoves(pos, Black)
-	if len(pawnCaptures) != 1 {
-		t.Fatalf("want 1, get %d", len(pawnCaptures))
+	var list MoveList
+	GeneratePawnMoves(pos, Black, &list)
+	if list.count != 1 {
+		t.Fatalf("want 1, get %d", list.count)
 	}
 }
 
 func TestGenerateKingMoves(t *testing.T) {
 	pos := StartPos()
 
-	moves := GenerateKingMoves(*pos, White)
-	if len(moves) > 0 {
-		t.Fatalf("want 0, get %d", len(moves))
+	var list MoveList
+	GenerateKingMoves(*pos, White, &list)
+	if list.count > 0 {
+		t.Fatalf("want 0, get %d", list.count)
 	}
 }
 
 func TestGenerateKnightMoves(t *testing.T) {
 	pos := StartPos()
 
-	moves := GenerateKnightMoves(*pos, White)
-	if len(moves) != 4 {
-		t.Fatalf("want 4 moves; get %d", len(moves))
+	var list MoveList
+	GenerateKnightMoves(*pos, White, &list)
+	if list.count != 4 {
+		t.Fatalf("want 4 moves; get %d", list.count)
 	}
 }
 

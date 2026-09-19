@@ -19,7 +19,10 @@ func walkHashCheck(t *testing.T, pos *Position, depth int) {
 		return
 	}
 
-	for _, move := range GenerateLegalMoves(*pos, pos.SideToMove) {
+	var moveList MoveList
+	GenerateLegalMoves(*pos, pos.SideToMove, &moveList)
+
+	for _, move := range moveList.Slice() {
 		undo := pos.MakeMove(move)
 		walkHashCheck(t, pos, depth-1)
 		pos.UnmakeMove(move, undo)
