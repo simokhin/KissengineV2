@@ -120,3 +120,95 @@ func TestEvaluateSymmetry(t *testing.T) {
 	})
 	t.Logf("checked %d positions", n)
 }
+
+// TestTraceMatchesEvaluate checks the contract of Trace: summing its counts
+// times the weights, tapered by phase, reproduces Evaluate exactly. It runs
+// on the real weights and on random ones, because with the real weights most
+// mg and eg values are equal and a mixed-up phase or a swapped mg/eg would go
+// unnoticed.
+func TestTraceMatchesEvaluate(t *testing.T) {
+	saved := evalWeights
+	defer func() { evalWeights = saved }()
+
+	rng := rand.New(rand.NewSource(2))
+
+	for run := range 4 {
+		if run > 0 {
+			for i := range evalWeights {
+				evalWeights[i] = weight{mg: rng.Intn(401) - 200, eg: rng.Intn(401) - 200}
+			}
+		}
+
+		n := 0
+		evalTestPositions(t, func(pos *Position) {
+			n++
+			entries, phase := Trace(pos)
+			if phase != gamePhase(pos) {
+				t.Fatalf("phase = %d, want %d", phase, gamePhase(pos))
+			}
+
+			var mg, eg int
+			seen := map[uint16]bool{}
+			for _, e := range entries {
+				if e.Count == 0 || seen[e.Index] {
+					t.Fatalf("bad entry %+v (zero count or repeated index)", e)
+				}
+				seen[e.Index] = true
+				mg += int(e.Count) * evalWeights[e.Index].mg
+				eg += int(e.Count) * evalWeights[e.Index].eg
+			}
+
+			if got, want := (mg*phase+eg*(totalPhase-phase))/totalPhase, Evaluate(pos); got != want {
+				t.Fatalf("run %d: trace gives %d, Evaluate gives %d", run, got, want)
+			}
+		})
+		t.Logf("run %d: checked %d positions", run, n)
+	}
+}
+
+// TestWeightNames checks that every weight has a distinct, non-empty name,
+// which also catches gaps or overlaps between the blocks of the layout.
+func TestWeightNames(t *testing.T) {
+	seen := map[string]int{}
+	for i := range NumWeights {
+		name := WeightName(i)
+		if name == "" {
+			t.Fatalf("weight %d has no name", i)
+		}
+		if j, dup := seen[name]; dup {
+			t.Fatalf("weights %d and %d are both called %q", j, i, name)
+		}
+		seen[name] = i
+	}
+
+	for _, tc := range []struct {
+		idx  int
+		want string
+	}{
+		{wMaterial + int(Queen), "material/queen"},
+		{wPST + int(Knight)*64 + int(E4^56), "pst/knight/e4"},
+		{wPST + int(King)*64, "pst/king/a8"},
+		{wPassedBlocked + 5, "passed-blocked/rank6"},
+		// Every scalar index must be its own weight: two constants sharing an
+		// index would just make the vector shorter, and Evaluate and Trace
+		// would agree with each other about the mistake.
+		{wKnightMobility, "mobility/knight"},
+		{wBishopMobility, "mobility/bishop"},
+		{wRookMobility, "mobility/rook"},
+		{wQueenMobility, "mobility/queen"},
+		{wBishopPair, "bishop-pair"},
+		{wRookOpenFile, "rook-open-file"},
+		{wRookSemiOpenFile, "rook-semi-open-file"},
+		{wPawnShield, "pawn-shield"},
+		{wDoubledPawn, "doubled-pawn"},
+		{wIsolatedPawn, "isolated-pawn"},
+		{wPassed, "passed/rank1"},
+		{wPassed + 7, "passed/rank8"},
+		{wPassedBlocked, "passed-blocked/rank1"},
+		{numWeights - 1, "passed-blocked/rank8"},
+	} {
+		if got := WeightName(tc.idx); got != tc.want {
+			t.Errorf("WeightName(%d) = %q, want %q", tc.idx, got, tc.want)
+		}
+	}
+}

@@ -78,10 +78,16 @@ func init() {
 // endgame sums.
 type evalAcc struct {
 	mg, eg int
+	// trace, when non-nil, also records how many times each weight was
+	// counted; it is nil during search, so this costs one predictable branch.
+	trace *[numWeights]int16
 }
 
 func (a *evalAcc) add(idx, count int) {
 	w := &evalWeights[idx]
 	a.mg += count * w.mg
 	a.eg += count * w.eg
+	if a.trace != nil {
+		a.trace[idx] += int16(count)
+	}
 }

@@ -111,7 +111,14 @@ func init() {
 // minus what Black has, both counted by evalSide, with the middlegame and
 // endgame sums blended by game phase once at the end.
 func Evaluate(pos *Position) int {
-	white, black := evalSide(pos, White), evalSide(pos, Black)
+	return evaluate(pos, nil, nil)
+}
+
+// evaluate is Evaluate with optional tracing: when whiteTrace/blackTrace are
+// non-nil they receive how many times each weight was used by that side (see
+// Trace). Search passes nil for both.
+func evaluate(pos *Position, whiteTrace, blackTrace *[numWeights]int16) int {
+	white, black := evalSide(pos, White, whiteTrace), evalSide(pos, Black, blackTrace)
 	phase := gamePhase(pos)
 
 	mg, eg := white.mg-black.mg, white.eg-black.eg
@@ -123,7 +130,7 @@ func Evaluate(pos *Position) int {
 // middlegame and endgame scores; penalties come out negative. It is written
 // once from the mover's point of view, so White and Black can't drift apart:
 // squares are mapped through orient and "ahead" through pawnPush.
-func evalSide(pos *Position, us Color) evalAcc {
+func evalSide(pos *Position, us Color, trace *[numWeights]int16) evalAcc {
 	own := pos.Colors[us]
 	ourPawns := pos.Pieces[Pawn] & own
 	theirPawns := pos.Pieces[Pawn] & pos.Colors[us^1]
@@ -138,7 +145,7 @@ func evalSide(pos *Position, us Color) evalAcc {
 		orient, pawnPush = 56, -8
 	}
 
-	var acc evalAcc
+	acc := evalAcc{trace: trace}
 
 	for pt := Pawn; pt <= King; pt++ {
 		pieces := pos.Pieces[pt] & own
