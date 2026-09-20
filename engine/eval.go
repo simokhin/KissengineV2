@@ -23,6 +23,12 @@ const (
 
 var passedPawnRankBonus = [8]int{0, 5, 10, 20, 35, 60, 100, 150}
 
+// blockedPassedPawnDivisor divides a passed pawn's bonus while the square in
+// front of it is occupied: a blockaded pawn can't advance, so it is worth much
+// less than a free one (at rank 6/7 the full bonus once made the engine sell a
+// queen for a pawn that then sat blocked and was lost).
+const blockedPassedPawnDivisor = 2
+
 var pieceValues = [7]int{
 	Pawn:   100,
 	Knight: 320,
@@ -153,6 +159,9 @@ func Evaluate(pos *Position) int {
 			var passedBonus int
 			if pt == Pawn && pos.Pieces[Pawn]&pos.Colors[Black]&passedPawnMasks[White][sq] == 0 {
 				passedBonus = passedPawnRankBonus[sq.Rank()]
+				if pos.Pieces[AllPieces]&(Bitboard(1)<<(sq+8)) != 0 {
+					passedBonus /= blockedPassedPawnDivisor
+				}
 			}
 
 			eval += pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus + ksBonus
@@ -204,6 +213,9 @@ func Evaluate(pos *Position) int {
 			var passedBonus int
 			if pt == Pawn && pos.Pieces[Pawn]&pos.Colors[White]&passedPawnMasks[Black][sq] == 0 {
 				passedBonus = passedPawnRankBonus[7-sq.Rank()]
+				if pos.Pieces[AllPieces]&(Bitboard(1)<<(sq-8)) != 0 {
+					passedBonus /= blockedPassedPawnDivisor
+				}
 			}
 
 			eval -= pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus + ksBonus

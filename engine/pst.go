@@ -2,7 +2,7 @@ package engine
 
 var pawnPST = [64]int{
 	0, 0, 0, 0, 0, 0, 0, 0,
-	50, 50, 50, 50, 50, 50, 50, 50,
+	0, 0, 0, 0, 0, 0, 0, 0, // 7th rank: advancement is paid by passedPawnRankBonus
 	10, 10, 20, 30, 30, 20, 10, 10,
 	5, 5, 10, 25, 25, 10, 5, 5,
 	0, 0, 0, 20, 20, 0, 0, 0,
