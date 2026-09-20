@@ -54,6 +54,10 @@ type SearchState struct {
 	// Negamax: entries before it are game history, entries from it on were
 	// reached during this search. Set by BestMove.
 	rootIdx int
+
+	// rootBest is the best move found by the last completed root search.
+	// The next iteration searches it first. Zero before the first iteration.
+	rootBest Move
 }
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
@@ -346,33 +350,54 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 		return Move(0), 0, 0
 	}
 
-	hash := pos.Hash()
-	entry, _ := ttProbe(hash)
+	// Previous iteration's best move first; the TT is only a fallback for the
+	// very first iteration, where it can hold a move from an earlier `go`.
+	ttMove := s.rootBest
+	if ttMove == 0 {
+		entry, _ := ttProbe(pos.Hash())
+		ttMove = entry.bestMove
+	}
 
 	// Ordering move ttMove => Captures => Others
 	sortMovesByScore(moves, func(m Move) int {
-		return s.orderScore(pos, 0, m, entry.bestMove)
+		return s.orderScore(pos, 0, m, ttMove)
 	})
 
 	bestMove := moves[0]
-	bestScore := Minimum
 
-	for _, move := range moves {
+	for i, move := range moves {
 		undo := pos.MakeMove(move)
-
 		newHistory := append(history, pos.Hash())
 
-		score := -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
+		var score int
+		if i == 0 {
+			score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
+		} else {
+			// Null window: we only need to know whether this move beats alpha.
+			score = -s.Negamax(&pos, depth-1, 1, -alpha-1, -alpha, newHistory, false, 0)
+			if score > alpha && score < beta {
+				score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
+			}
+		}
 
 		pos.UnmakeMove(move, undo)
 
-		if score > bestScore {
-			bestScore = score
+		if score > alpha {
+			alpha = score
 			bestMove = move
+			if alpha >= beta {
+				break // fail-high: the caller widens the aspiration window
+			}
 		}
 	}
 
-	return bestMove, s.nodes, bestScore
+	// A cancelled search returns garbage, so it must not become the next
+	// iteration's first move.
+	if s.ctx.Err() == nil {
+		s.rootBest = bestMove
+	}
+
+	return bestMove, s.nodes, alpha
 }
 
 // SearchTimed performs iterative deepening negamax search, returning
