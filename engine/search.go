@@ -49,6 +49,11 @@ type SearchState struct {
 	nodes      uint64
 	killers    [64][2]Move
 	historyHeu [2][64][64]int
+
+	// rootIdx is the index of the root position in the history slice passed to
+	// Negamax: entries before it are game history, entries from it on were
+	// reached during this search. Set by BestMove.
+	rootIdx int
 }
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
@@ -64,21 +69,27 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 	hash := pos.Hash()
 
-	// Take last moves from history. Clamped to 0: when search starts from a
-	// FEN with a nonzero halfmove clock, history only holds moves made
-	// since the search began, which can be fewer than FiftyMovesRule.
-	start := max(0, len(history)-1-pos.FiftyMovesRule)
-	lastHistory := history[start:]
+	// Repetition, looking only at positions since the last irreversible move.
+	// The start is clamped to 0: when the search starts from a FEN with a
+	// nonzero halfmove clock, history holds fewer entries than FiftyMovesRule.
+	// A node right after a null move isn't a real position, so it can't repeat.
+	repeated := false
+	if !nullMove {
+		n := len(history) - 1 // index of this node's own hash
+		for i := max(0, n-pos.FiftyMovesRule); i < n; i++ {
+			if history[i] != hash {
+				continue
+			}
 
-	// Check for a draw by threefold repetition.
-	count := 0
-	for _, h := range lastHistory {
-		if h == hash {
-			count++
+			// An earlier occurrence inside this search (the root included) is
+			// scored as a draw: either side can go round the cycle again, so
+			// there is nothing to gain from it. Occurrences from before the
+			// root only make a draw on the third one, as in the real rule.
+			if i >= s.rootIdx || repeated {
+				return 0
+			}
+			repeated = true
 		}
-	}
-	if count >= 3 {
-		return 0
 	}
 
 	// Check FiftyMovesRule
@@ -86,10 +97,13 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		return 0
 	}
 
-	// Check position in the transpositional table
+	// Check position in the transpositional table. No cutoff for a position
+	// that already occurred in the game: the stored score knows nothing about
+	// the repetition history, so it can hide that the opponent now completes a
+	// threefold. The TT move is still used for ordering below.
 	entry, found := ttProbe(hash)
 	adjustedScore := adjustMateForRetreve(entry.score, ply)
-	if found && entry.depth >= depth {
+	if found && entry.depth >= depth && !repeated {
 		switch entry.flag {
 		case Exact:
 			return adjustedScore
@@ -320,6 +334,7 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 // moves; s.nodes is reset here, so the returned count is per call.
 func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, beta int) (Move, uint64, int) {
 	s.nodes = 0
+	s.rootIdx = len(history) - 1
 	var moveList MoveList
 	GenerateLegalMoves(pos, pos.SideToMove, &moveList)
 	moves := moveList.Slice()

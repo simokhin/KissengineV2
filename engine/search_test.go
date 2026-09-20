@@ -105,6 +105,67 @@ func TestOrderScoreLosingCaptureLast(t *testing.T) {
 	}
 }
 
+// repetitionFEN is a won KRvK position with a nonzero halfmove clock, so the
+// repetition window covers the whole test history slices.
+const repetitionFEN = "4k3/8/8/8/8/8/8/R3K3 w - - 10 30"
+
+// TestTTCutoffSkippedForRepeatedPosition guards against the TT hiding a
+// repetition: a stored score for a position that already occurred in the game
+// knows nothing about the history, so it must not be returned as a cutoff --
+// otherwise the search doesn't see that the opponent can complete a threefold.
+// (In a real game this made the engine walk into a draw at +2.5.)
+func TestTTCutoffSkippedForRepeatedPosition(t *testing.T) {
+	pos := ParseFEN(repetitionFEN)
+	h := pos.Hash()
+	other := h ^ 0xABCD
+
+	ttStore(h, 30, 5000, Exact, Move(0))
+	defer func() { tTable[ttIndex(h)] = TTEntry{} }()
+
+	s := &SearchState{ctx: context.Background(), rootIdx: 1}
+
+	// h occurs only as the node itself: the stored score is trusted.
+	if got := s.Negamax(pos, 3, 1, Minimum, Maximum, []uint64{other, h}, false, 0); got != 5000 {
+		t.Fatalf("no earlier occurrence: want the TT score 5000, got %d", got)
+	}
+
+	// h already occurred before the root: no TT cutoff, the position is searched.
+	ttStore(h, 30, 5000, Exact, Move(0))
+	got := s.Negamax(pos, 3, 1, Minimum, Maximum, []uint64{h, other, h}, false, 0)
+	if got == 5000 || got <= 0 {
+		t.Fatalf("repeated position: want a real search score (winning, not the TT's 5000), got %d", got)
+	}
+}
+
+// TestRepetitionScoring checks when a repeated position is scored as a draw:
+// on any earlier occurrence inside the search, but for occurrences from before
+// the root only on the third one; and never for the node right after a null move.
+func TestRepetitionScoring(t *testing.T) {
+	pos := ParseFEN(repetitionFEN)
+	h := pos.Hash()
+	a, b := h^1, h^2
+
+	search := func(rootIdx int, nullMove bool, history []uint64) int {
+		s := &SearchState{ctx: context.Background(), rootIdx: rootIdx}
+		tTable[ttIndex(h)] = TTEntry{}
+		defer func() { tTable[ttIndex(h)] = TTEntry{} }()
+		return s.Negamax(pos, 3, 1, Minimum, Maximum, history, nullMove, 0)
+	}
+
+	if got := search(1, false, []uint64{a, h, a, h}); got != 0 {
+		t.Errorf("repeated inside the search (root included): want draw 0, got %d", got)
+	}
+	if got := search(2, false, []uint64{h, a, b, h}); got == 0 {
+		t.Errorf("one earlier occurrence before the root is not yet a draw, got 0")
+	}
+	if got := search(3, false, []uint64{h, a, h, b, h}); got != 0 {
+		t.Errorf("third occurrence (two before the root): want draw 0, got %d", got)
+	}
+	if got := search(1, true, []uint64{a, h, a, h}); got == 0 {
+		t.Errorf("node after a null move must not count as a repetition, got 0")
+	}
+}
+
 // TestMateScorePlyAdjustment guards against a regression in the TT mate-score
 // ply adjustment: storing a mate score found deep in the tree and retrieving
 // it via transposition at a shallower ply must report the mate as closer
