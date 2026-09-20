@@ -108,18 +108,22 @@ func init() {
 }
 
 // Evaluate scores the position from White's perspective: what White has
-// minus what Black has, both counted by evalSide.
+// minus what Black has, both counted by evalSide, with the middlegame and
+// endgame sums blended by game phase once at the end.
 func Evaluate(pos *Position) int {
+	white, black := evalSide(pos, White), evalSide(pos, Black)
 	phase := gamePhase(pos)
 
-	return evalSide(pos, White, phase) - evalSide(pos, Black, phase)
+	mg, eg := white.mg-black.mg, white.eg-black.eg
+
+	return (mg*phase + eg*(totalPhase-phase)) / totalPhase
 }
 
-// evalSide sums every evaluation term for the pieces of color us; penalties
-// come out negative. It is written once from the mover's point of view, so
-// White and Black can't drift apart: squares are mapped through orient and
-// "ahead" through pawnPush.
-func evalSide(pos *Position, us Color, phase int) int {
+// evalSide sums every evaluation term for the pieces of color us, as separate
+// middlegame and endgame scores; penalties come out negative. It is written
+// once from the mover's point of view, so White and Black can't drift apart:
+// squares are mapped through orient and "ahead" through pawnPush.
+func evalSide(pos *Position, us Color) evalAcc {
 	own := pos.Colors[us]
 	ourPawns := pos.Pieces[Pawn] & own
 	theirPawns := pos.Pieces[Pawn] & pos.Colors[us^1]
@@ -143,14 +147,11 @@ func evalSide(pos *Position, us Color, phase int) int {
 			relSq := sq ^ orient // the PSTs are laid out from rank 8 down, hence ^56 below
 			pstSq := int(relSq ^ 56)
 
-			// Material and piece-square value; the king blends its middlegame
-			// and endgame tables by game phase instead.
-			if pt == King {
-				acc.score += (evalWeights[wPST+int(King)*64+pstSq]*phase + evalWeights[wKingEndgamePST+pstSq]*(totalPhase-phase)) / totalPhase
-			} else {
+			// Material and piece-square value
+			if pt != King {
 				acc.add(wMaterial+int(pt), 1)
-				acc.add(wPST+int(pt)*64+pstSq, 1)
 			}
+			acc.add(wPST+int(pt)*64+pstSq, 1)
 
 			// Mobility bonus
 			switch pt {
@@ -212,7 +213,7 @@ func evalSide(pos *Position, us Color, phase int) int {
 		acc.add(wBishopPair, 1)
 	}
 
-	return acc.score
+	return acc
 }
 
 func gamePhase(pos *Position) int {

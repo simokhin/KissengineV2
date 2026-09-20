@@ -1,5 +1,11 @@
 package engine
 
+// weight is one tunable evaluation weight as a middlegame/endgame pair;
+// Evaluate blends the two sums by game phase.
+type weight struct {
+	mg, eg int
+}
+
 // evalWeights holds every tunable evaluation weight in one flat array, so a
 // term is an index plus a count (evalAcc.add) instead of a constant and an
 // if in the evaluation loop. The w* constants are the indices; a block that
@@ -7,18 +13,15 @@ package engine
 //
 // The initial values are still written as the readable tables and constants
 // (pst.go, eval.go) and copied in by init below.
-var evalWeights [numWeights]int
+var evalWeights [numWeights]weight
 
 const (
 	wMaterial = 0 // Pawn..Queen, by PieceType (the king has none)
 	// One 64-entry table per piece type, by PieceType then by square laid out
 	// from rank 8 down (index = relSq^56, see evalSide).
 	wPST = wMaterial + 5
-	// The king's endgame table; wPST's king table is its middlegame one and
-	// evalSide blends the two by game phase.
-	wKingEndgamePST = wPST + 6*64
 
-	wKnightMobility = wKingEndgamePST + 64
+	wKnightMobility = wPST + 6*64
 	wBishopMobility = wKnightMobility + 1
 	wRookMobility   = wBishopMobility + 1
 	wQueenMobility  = wRookMobility + 1
@@ -37,37 +40,48 @@ const (
 )
 
 func init() {
+	// Everything starts out the same in the middlegame and the endgame except
+	// the king's table, which has a separate endgame version.
+	both := func(v int) weight { return weight{v, v} }
+
 	for pt := Pawn; pt <= Queen; pt++ {
-		evalWeights[wMaterial+int(pt)] = pieceValues[pt]
+		evalWeights[wMaterial+int(pt)] = both(pieceValues[pt])
 	}
 	for pt := Pawn; pt <= King; pt++ {
-		copy(evalWeights[wPST+int(pt)*64:], pst[pt][:])
+		for sq, v := range pst[pt] {
+			evalWeights[wPST+int(pt)*64+sq] = both(v)
+		}
 	}
-	copy(evalWeights[wKingEndgamePST:], kingEndgamePST[:])
+	for sq, v := range kingEndgamePST {
+		evalWeights[wPST+int(King)*64+sq].eg = v
+	}
 
-	evalWeights[wKnightMobility] = knightMobilityBonus
-	evalWeights[wBishopMobility] = bishopMobilityBonus
-	evalWeights[wRookMobility] = rookMobilityBonus
-	evalWeights[wQueenMobility] = queenMobilityBonus
+	evalWeights[wKnightMobility] = both(knightMobilityBonus)
+	evalWeights[wBishopMobility] = both(bishopMobilityBonus)
+	evalWeights[wRookMobility] = both(rookMobilityBonus)
+	evalWeights[wQueenMobility] = both(queenMobilityBonus)
 
-	evalWeights[wBishopPair] = bishopPairBonus
-	evalWeights[wRookOpenFile] = openFileBonus
-	evalWeights[wRookSemiOpenFile] = semiOpenFileBonus
-	evalWeights[wPawnShield] = pawnShieldBonus
-	evalWeights[wDoubledPawn] = doubledPawnPenalty
-	evalWeights[wIsolatedPawn] = isolatedPawnPenalty
+	evalWeights[wBishopPair] = both(bishopPairBonus)
+	evalWeights[wRookOpenFile] = both(openFileBonus)
+	evalWeights[wRookSemiOpenFile] = both(semiOpenFileBonus)
+	evalWeights[wPawnShield] = both(pawnShieldBonus)
+	evalWeights[wDoubledPawn] = both(doubledPawnPenalty)
+	evalWeights[wIsolatedPawn] = both(isolatedPawnPenalty)
 
 	for rank, bonus := range passedPawnRankBonus {
-		evalWeights[wPassed+rank] = bonus
-		evalWeights[wPassedBlocked+rank] = bonus / blockedPassedPawnDivisor
+		evalWeights[wPassed+rank] = both(bonus)
+		evalWeights[wPassedBlocked+rank] = both(bonus / blockedPassedPawnDivisor)
 	}
 }
 
-// evalAcc accumulates weight*count terms into a running score.
+// evalAcc accumulates weight*count terms into separate middlegame and
+// endgame sums.
 type evalAcc struct {
-	score int
+	mg, eg int
 }
 
-func (a *evalAcc) add(weight, count int) {
-	a.score += count * evalWeights[weight]
+func (a *evalAcc) add(idx, count int) {
+	w := &evalWeights[idx]
+	a.mg += count * w.mg
+	a.eg += count * w.eg
 }
