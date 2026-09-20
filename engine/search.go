@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"slices"
-	"time"
 )
 
 const (
@@ -400,57 +399,6 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 	return bestMove, s.nodes, alpha
 }
 
-// SearchTimed performs iterative deepening negamax search, returning
-// the best move found before timeLimit expires along with the total node
-// count and the deepest depth fully searched. depth 1 always seeds bestMove
-// with a real legal move (even under extreme time pressure), and later
-// depths only overwrite it once they finish completely -- a depth cut short
-// by the time limit is discarded rather than allowed to replace a good,
-// fully-searched result with a worse, half-searched one.
-func SearchTimed(pos Position, timeLimit time.Duration, history []uint64) (Move, uint64, int, int) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeLimit)
-	defer cancel()
-
-	s := &SearchState{ctx: ctx}
-
-	var completedDepth int
-
-	bestMove, totalNodes, bestScore := BestMove(s, pos, 1, history, Minimum, Maximum)
-	if ctx.Err() == nil {
-		completedDepth = 1
-	}
-
-	windowSize := 50
-	alpha, beta := bestScore-windowSize, bestScore+windowSize
-
-	for depth := 2; ; depth++ {
-		if ctx.Err() != nil {
-			break
-		}
-
-		move, nodes, score := BestMove(s, pos, depth, history, alpha, beta)
-		totalNodes += nodes
-
-		if ctx.Err() != nil {
-			break
-		}
-
-		if score <= alpha || score >= beta {
-			alpha, beta = Minimum, Maximum
-			depth--
-			continue
-		}
-
-		bestMove = move
-		bestScore = score
-		completedDepth = depth
-
-		alpha, beta = score-windowSize, score+windowSize
-	}
-
-	return bestMove, totalNodes, completedDepth, bestScore
-}
-
 // moveScore returns a priority score for move ordering: captures
 // of valuable pieces by less valuable attackers score highest (MVV-LVA).
 // The second return value reports whether m is a capture (including en
@@ -495,37 +443,6 @@ func isCapture(pos Position, m Move) bool {
 		}
 		return false
 	}
-}
-
-func SearchDepth(pos Position, maxDepth int, history []uint64) (Move, uint64, int, int) {
-	s := &SearchState{ctx: context.Background()}
-
-	var completedDepth int
-	bestMove, totalNodes, bestScore := BestMove(s, pos, 1, history, Minimum, Maximum)
-
-	// Aspiration window
-	windowSize := 50
-	alpha, beta := bestScore-windowSize, bestScore+windowSize
-
-	for depth := 2; depth <= maxDepth; depth++ {
-		move, nodes, score := BestMove(s, pos, depth, history, alpha, beta)
-
-		totalNodes += nodes
-
-		if score <= alpha || score >= beta {
-			alpha, beta = Minimum, Maximum
-			depth--
-			continue
-		}
-
-		bestMove = move
-		bestScore = score
-		completedDepth = depth
-
-		alpha, beta = score-windowSize, score+windowSize
-	}
-
-	return bestMove, totalNodes, completedDepth, bestScore
 }
 
 func (p *Position) MakeNullMove() Square {
