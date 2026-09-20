@@ -181,6 +181,10 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	var flag TTFlag
 
 	for i, move := range moves {
+		// LMR: decided before the move is made, since canReduce looks at what the
+		// move captures and after MakeMove the target square holds the mover.
+		canReduce := i > 0 && s.canReduce(*pos, move, depth, i, ply)
+
 		undo := pos.MakeMove(move)
 		newHistory := append(history, pos.Hash()) // Save new position's hash to history
 
@@ -197,9 +201,6 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 			return -s.Negamax(pos, newDepth, ply+1, a, b, newHistory, false, extensions)
 		}
-
-		// LMR
-		canReduce := i > 0 && s.canReduce(*pos, move, depth, i, ply)
 
 		// Principal Variation Search
 		var nextEval int
