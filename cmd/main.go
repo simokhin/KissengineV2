@@ -28,12 +28,22 @@ func main() {
 		case "uci":
 			fmt.Println("id name KissengineV2")
 			fmt.Println("id author Nikita Simokhin")
+			fmt.Printf("option name Hash type spin default %d min 1 max 4096\n", engine.DefaultHashMB)
 			fmt.Println("uciok")
 
 		case "isready":
 			fmt.Println("readyok")
 
+		case "setoption":
+			// setoption name Hash value <MB>
+			if len(fields) >= 5 && fields[1] == "name" && strings.EqualFold(fields[2], "Hash") && fields[3] == "value" {
+				if mb, err := strconv.Atoi(fields[4]); err == nil {
+					engine.SetHashSize(mb)
+				}
+			}
+
 		case "ucinewgame":
+			engine.ClearHash()
 			pos = engine.StartPos()
 			history = []uint64{pos.Hash()}
 

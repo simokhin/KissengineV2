@@ -120,7 +120,7 @@ func TestTTCutoffSkippedForRepeatedPosition(t *testing.T) {
 	other := h ^ 0xABCD
 
 	ttStore(h, 30, 5000, Exact, Move(0))
-	defer func() { tTable[ttIndex(h)] = TTEntry{} }()
+	defer func() { tTable[ttIndex(h)] = ttSlot{} }()
 
 	s := &SearchState{ctx: context.Background(), rootIdx: 1}
 
@@ -147,8 +147,8 @@ func TestRepetitionScoring(t *testing.T) {
 
 	search := func(rootIdx int, nullMove bool, history []uint64) int {
 		s := &SearchState{ctx: context.Background(), rootIdx: rootIdx}
-		tTable[ttIndex(h)] = TTEntry{}
-		defer func() { tTable[ttIndex(h)] = TTEntry{} }()
+		tTable[ttIndex(h)] = ttSlot{}
+		defer func() { tTable[ttIndex(h)] = ttSlot{} }()
 		return s.Negamax(pos, 3, 1, Minimum, Maximum, history, nullMove, 0)
 	}
 
