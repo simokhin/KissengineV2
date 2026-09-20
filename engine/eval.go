@@ -134,62 +134,59 @@ func evalSide(pos *Position, us Color, phase int) int {
 		orient, pawnPush = 56, -8
 	}
 
-	var eval int
+	var acc evalAcc
 
 	for pt := Pawn; pt <= King; pt++ {
 		pieces := pos.Pieces[pt] & own
 		for pieces != 0 {
 			sq := pieces.PopLSB()
 			relSq := sq ^ orient // the PSTs are laid out from rank 8 down, hence ^56 below
+			pstSq := int(relSq ^ 56)
 
-			// Add PST value for all pieces
-			pstValue := pst[pt][relSq^56]
-
-			// Change PST for King in the endgame
+			// Material and piece-square value; the king blends its middlegame
+			// and endgame tables by game phase instead.
 			if pt == King {
-				pstValue = (pst[King][relSq^56]*phase + kingEndgamePST[relSq^56]*(totalPhase-phase)) / totalPhase
+				acc.score += (evalWeights[wPST+int(King)*64+pstSq]*phase + evalWeights[wKingEndgamePST+pstSq]*(totalPhase-phase)) / totalPhase
+			} else {
+				acc.add(wMaterial+int(pt), 1)
+				acc.add(wPST+int(pt)*64+pstSq, 1)
 			}
 
 			// Mobility bonus
-			mobilityBonus := 0
 			switch pt {
 			case Knight:
-				mobilityBonus = (KnightAttacks[sq] &^ own).PopCount() * knightMobilityBonus
+				acc.add(wKnightMobility, (KnightAttacks[sq] &^ own).PopCount())
 			case Bishop:
-				mobilityBonus = (bishopAttacksMagic(sq, occupied) &^ own).PopCount() * bishopMobilityBonus
+				acc.add(wBishopMobility, (bishopAttacksMagic(sq, occupied) &^ own).PopCount())
 			case Rook:
-				mobilityBonus = (rookAttacksMagic(sq, occupied) &^ own).PopCount() * rookMobilityBonus
+				acc.add(wRookMobility, (rookAttacksMagic(sq, occupied) &^ own).PopCount())
 			case Queen:
-				mobilityBonus = (queenAttacksMagic(sq, occupied) &^ own).PopCount() * queenMobilityBonus
+				acc.add(wQueenMobility, (queenAttacksMagic(sq, occupied) &^ own).PopCount())
 			}
 
 			// Rook on open file bonus
-			var ofBonus int
 			if pt == Rook {
 				file := fileMasks[sq.File()]
 				if (pos.Pieces[Pawn] & file) == 0 {
-					ofBonus += openFileBonus
+					acc.add(wRookOpenFile, 1)
 				} else if (ourPawns & file) == 0 {
-					ofBonus += semiOpenFileBonus
+					acc.add(wRookSemiOpenFile, 1)
 				}
 			}
 
 			// King safety bonus
-			var ksBonus int
 			if pt == King {
-				ksBonus = (ourPawns & kingShieldMasks[us][sq]).PopCount() * pawnShieldBonus
+				acc.add(wPawnShield, (ourPawns & kingShieldMasks[us][sq]).PopCount())
 			}
 
 			// Passed pawn bonus
-			var passedBonus int
 			if pt == Pawn && theirPawns&passedPawnMasks[us][sq] == 0 {
-				passedBonus = passedPawnRankBonus[relSq.Rank()]
 				if occupied&(sq+pawnPush).BB() != 0 {
-					passedBonus /= blockedPassedPawnDivisor
+					acc.add(wPassedBlocked+relSq.Rank(), 1)
+				} else {
+					acc.add(wPassed+relSq.Rank(), 1)
 				}
 			}
-
-			eval += pieceValues[pt] + pstValue + mobilityBonus + passedBonus + ofBonus + ksBonus
 		}
 	}
 
@@ -199,23 +196,23 @@ func evalSide(pos *Position, us Color, phase int) int {
 		// Check if pawn is doubled
 		count := (ourPawns & fileMasks[f]).PopCount()
 		if count > 1 {
-			eval += (count - 1) * doubledPawnPenalty
+			acc.add(wDoubledPawn, count-1)
 		}
 
 		// Check if pawn is isolated
 		leftEmpty := f == 0 || (ourPawns&fileMasks[f-1]).PopCount() == 0
 		rightEmpty := f == 7 || (ourPawns&fileMasks[f+1]).PopCount() == 0
 		if count > 0 && leftEmpty && rightEmpty {
-			eval += count * isolatedPawnPenalty
+			acc.add(wIsolatedPawn, count)
 		}
 	}
 
 	// Bishop pair bonus
 	if (pos.Pieces[Bishop] & own).PopCount() >= 2 {
-		eval += bishopPairBonus
+		acc.add(wBishopPair, 1)
 	}
 
-	return eval
+	return acc.score
 }
 
 func gamePhase(pos *Position) int {
