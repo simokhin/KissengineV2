@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"go/format"
 	"os"
+	"regexp"
+	"strconv"
 
 	"kissengine-bitboard/engine"
 )
@@ -46,6 +48,36 @@ func writeParams(path string, w [][2]int, pieceValues [7]int, header string) err
 	}
 
 	return os.WriteFile(path, src, 0o644)
+}
+
+// existingPieceValues reads the pieceValues block of an existing generated
+// file. ok is false if the file or the block (all five piece types) is missing.
+func existingPieceValues(path string) (values [7]int, ok bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return values, false
+	}
+
+	block := regexp.MustCompile(`(?s)var pieceValues = \[7\]int\{(.*?)\n\}`).FindSubmatch(data)
+	if block == nil {
+		return values, false
+	}
+
+	found := 0
+	for pt, name := range pieceTypeNames {
+		m := regexp.MustCompile(`\b` + name + `:\s*(\d+),`).FindSubmatch(block[1])
+		if m == nil {
+			continue
+		}
+		v, err := strconv.Atoi(string(m[1]))
+		if err != nil {
+			return values, false
+		}
+		values[pt] = v
+		found++
+	}
+
+	return values, found == len(pieceTypeNames)
 }
 
 // existingHeader returns the "Tuned on ..." comment line of an existing

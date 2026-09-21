@@ -34,6 +34,7 @@ func main() {
 		limit    = flag.Int("limit", 0, "use only the first N lines of the file (0 = all)")
 		dry      = flag.Bool("dry", false, "report the result but don't write -out")
 		measure  = flag.Bool("measure-only", false, "don't tune: keep the current weights and only re-measure the piece values")
+		pieces   = flag.Bool("measure-pieces", false, "also re-measure the piece values (SEE and move ordering) after tuning; by default the ones already in -out are kept, so a retune doesn't silently change the search")
 	)
 	flag.Parse()
 
@@ -41,7 +42,7 @@ func main() {
 	if *measure {
 		err = runMeasureOnly(*dataPath, *outPath, *limit, *dry)
 	} else {
-		err = run(*dataPath, *outPath, *epochs, *lr, *reg, *minCount, *limit, *dry)
+		err = run(*dataPath, *outPath, *epochs, *lr, *reg, *minCount, *limit, *dry, *pieces)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "texel:", err)
@@ -49,7 +50,7 @@ func main() {
 	}
 }
 
-func run(dataPath, outPath string, epochs int, lr, reg float64, minCount, limit int, dry bool) error {
+func run(dataPath, outPath string, epochs int, lr, reg float64, minCount, limit int, dry, measurePieces bool) error {
 	start := time.Now()
 
 	train, test, lines, err := loadEPD(dataPath, limit)
@@ -95,12 +96,20 @@ func run(dataPath, outPath string, epochs int, lr, reg float64, minCount, limit 
 		return err
 	}
 
-	engine.SetWeights(tuned)
-	pieceValues, err := pieceValuesFromLines(lines)
-	if err != nil {
-		return err
+	pieceValues, keep := existingPieceValues(outPath)
+	if measurePieces || !keep {
+		engine.SetWeights(tuned)
+		if pieceValues, err = pieceValuesFromLines(lines); err != nil {
+			return err
+		}
+		printPieceValues(pieceValues)
+	} else {
+		fmt.Print("piece values kept from ", outPath, ":")
+		for pt := range 5 {
+			fmt.Printf("  %s %d", pieceTypeNames[pt], pieceValues[pt])
+		}
+		fmt.Println()
 	}
-	printPieceValues(pieceValues)
 
 	if dry {
 		fmt.Println("dry run: not writing", outPath)

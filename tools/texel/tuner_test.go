@@ -301,6 +301,29 @@ func TestMeasurePieceValuesSeesPositionalTerms(t *testing.T) {
 	}
 }
 
+// TestExistingPieceValues: what writeParams writes, existingPieceValues reads
+// back, and a missing or empty file reports "not there" so the tuner measures.
+func TestExistingPieceValues(t *testing.T) {
+	values := [7]int{engine.Pawn: 100, engine.Rook: 500, engine.Knight: 320, engine.Bishop: 330, engine.Queen: 900}
+	path := filepath.Join(t.TempDir(), "eval_params.go")
+
+	if err := writeParams(path, make([][2]int, engine.NumWeights), values, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := existingPieceValues(path); !ok || got != values {
+		t.Errorf("existingPieceValues = %v, %v; want %v, true", got, ok, values)
+	}
+
+	if _, ok := existingPieceValues(filepath.Join(t.TempDir(), "missing.go")); ok {
+		t.Error("existingPieceValues of a missing file reported ok")
+	}
+	empty := filepath.Join(t.TempDir(), "empty.go")
+	os.WriteFile(empty, []byte("package engine\n"), 0o644)
+	if _, ok := existingPieceValues(empty); ok {
+		t.Error("existingPieceValues of a file without the block reported ok")
+	}
+}
+
 func TestWriteParams(t *testing.T) {
 	w := make([][2]int, engine.NumWeights)
 	for i := range w {
