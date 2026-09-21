@@ -40,8 +40,8 @@ func TestPlyBeyondKillersBounds(t *testing.T) {
 
 	deepPly := len(s.killers)
 
-	if !s.canReduce(*pos, NewMove(B1, C3), 5, 5, deepPly) {
-		t.Errorf("canReduce at ply=%d: want true, got false", deepPly)
+	if r := s.lmrReduction(*pos, NewMove(B1, C3), 5, 5, deepPly, false, false); r <= 0 {
+		t.Errorf("lmrReduction at ply=%d: want a reduction, got %d", deepPly, r)
 	}
 
 	s.storeKiller(deepPly, NewMove(B1, C3))

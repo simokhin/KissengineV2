@@ -181,40 +181,35 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	var flag TTFlag
 
 	for i, move := range moves {
-		// LMR: decided before the move is made, since canReduce looks at what the
-		// move captures and after MakeMove the target square holds the mover.
-		canReduce := i > 0 && s.canReduce(*pos, move, depth, i, ply)
+		// LMR: decided before the move is made, since lmrReduction looks at what
+		// the move captures and after MakeMove the target square holds the mover.
+		reduction := s.lmrReduction(*pos, move, depth, i, ply, beta-alpha > 1, inCheck)
 
 		undo := pos.MakeMove(move)
 		newHistory := append(history, pos.Hash()) // Save new position's hash to history
 
-		search := func(a, b int, reduced bool) int {
+		search := func(a, b, reduction int) int {
 			// Check extension
 			if pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && extensions < 16 {
 				return -s.Negamax(pos, depth, ply+1, a, b, newHistory, false, extensions+1)
 			}
 
-			newDepth := depth - 1
-			if reduced {
-				newDepth--
-			}
-
-			return -s.Negamax(pos, newDepth, ply+1, a, b, newHistory, false, extensions)
+			return -s.Negamax(pos, depth-1-reduction, ply+1, a, b, newHistory, false, extensions)
 		}
 
 		// Principal Variation Search
 		var nextEval int
 		if i == 0 {
-			nextEval = search(-beta, -alpha, false)
+			nextEval = search(-beta, -alpha, 0)
 		} else {
-			nextEval = search(-alpha-1, -alpha, canReduce)
+			nextEval = search(-alpha-1, -alpha, reduction)
 
-			if canReduce && nextEval > alpha {
-				nextEval = search(-alpha-1, -alpha, false)
+			if reduction > 0 && nextEval > alpha {
+				nextEval = search(-alpha-1, -alpha, 0)
 			}
 
 			if nextEval > alpha && beta-alpha > 1 {
-				nextEval = search(-beta, -alpha, false)
+				nextEval = search(-beta, -alpha, 0)
 			}
 		}
 
@@ -522,23 +517,11 @@ func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int
 			// never outrank a killer. The divisor was picked by node counts over
 			// random positions: with 1000 only the top few percent of moves reached
 			// a nonzero score, and 30-100 all searched noticeably fewer nodes.
-			score += min(s.historyHeu[pos.SideToMove][m.From()][m.To()]/100, 39)
+			score += s.historyBonus(pos.SideToMove, m)
 		}
 	}
 
 	return score
-}
-
-func (s *SearchState) canReduce(pos Position, move Move, depth, i, ply int) bool {
-	if ply >= len(s.killers) {
-		return depth >= 3 && i >= 4 && !isCapture(pos, move) && !move.IsPromotion()
-	}
-
-	if depth >= 3 && i >= 4 && !isCapture(pos, move) && !move.IsPromotion() && move != s.killers[ply][0] && move != s.killers[ply][1] {
-		return true
-	}
-
-	return false
 }
 
 func adjustMateForStore(score, ply int) int {
