@@ -24,8 +24,10 @@ OUT=$(realpath -m "${OUT:-bin/match-$(date +%Y%m%d%H%M%S)}")
 
 mkdir -p "$OUT/base-src"
 git archive "$BASE" | tar -x -C "$OUT/base-src"
-(cd "$OUT/base-src" && go build -o ../base ./cmd)
-go build -o "$OUT/new" ./cmd
+# -pgo=off: a cmd/default.pgo in the working tree (but not in an older base) would
+# otherwise speed up only "new", and the match should compare code, not builds.
+(cd "$OUT/base-src" && go build -pgo=off -o ../base ./cmd)
+go build -pgo=off -o "$OUT/new" ./cmd
 
 has_hash_option() {
 	printf 'uci\nquit\n' | "$1" | grep -q '^option name Hash '
