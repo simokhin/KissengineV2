@@ -63,7 +63,7 @@ func Trace(pos *Position) (entries []TraceEntry, phase int) {
 
 // PSTIndex returns the index of the piece-square weight of piece type pt (in
 // PieceType order: pawn, rook, knight, bishop, queen, king) on table position
-// sq, the square numbered from a8 as the tables in pst.go are.
+// sq, the square numbered from a8 (the order of the weight names, a8 b8 ... h1).
 func PSTIndex(pt, sq int) int {
 	return wPST + pt*64 + sq
 }

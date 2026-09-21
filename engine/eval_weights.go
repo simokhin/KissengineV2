@@ -11,8 +11,10 @@ type weight struct {
 // if in the evaluation loop. The w* constants are the indices; a block that
 // says "by X" is a run of consecutive weights indexed by X.
 //
-// The initial values are still written as the readable tables and constants
-// (pst.go, eval.go) and copied in by init below.
+// The values come from tunedWeights (eval_params.go, written by tools/texel),
+// looked up by WeightName, and nowhere else: there are no hand-written tables
+// behind it. A weight with no entry there, such as a feature added since the
+// last tuning run, starts at bootstrapWeights or at zero.
 var evalWeights [numWeights]weight
 
 const (
@@ -39,45 +41,24 @@ const (
 	numWeights = wPassedBlocked + 8
 )
 
+// bootstrapWeights are the starting values of weights that tunedWeights has no
+// entry for: zero for everything except material, so that an untuned
+// evaluation still counts pieces and tools/texel has something to fit K to.
+var bootstrapWeights = map[string]weight{
+	"material/pawn":   {100, 100},
+	"material/rook":   {500, 500},
+	"material/knight": {320, 320},
+	"material/bishop": {330, 330},
+	"material/queen":  {900, 900},
+}
+
 func init() {
-	// Everything starts out the same in the middlegame and the endgame except
-	// the king's table, which has a separate endgame version.
-	both := func(v int) weight { return weight{v, v} }
-
-	for pt := Pawn; pt <= Queen; pt++ {
-		evalWeights[wMaterial+int(pt)] = both(pieceValues[pt])
-	}
-	for pt := Pawn; pt <= King; pt++ {
-		for sq, v := range pst[pt] {
-			evalWeights[wPST+int(pt)*64+sq] = both(v)
-		}
-	}
-	for sq, v := range kingEndgamePST {
-		evalWeights[wPST+int(King)*64+sq].eg = v
-	}
-
-	evalWeights[wKnightMobility] = both(knightMobilityBonus)
-	evalWeights[wBishopMobility] = both(bishopMobilityBonus)
-	evalWeights[wRookMobility] = both(rookMobilityBonus)
-	evalWeights[wQueenMobility] = both(queenMobilityBonus)
-
-	evalWeights[wBishopPair] = both(bishopPairBonus)
-	evalWeights[wRookOpenFile] = both(openFileBonus)
-	evalWeights[wRookSemiOpenFile] = both(semiOpenFileBonus)
-	evalWeights[wPawnShield] = both(pawnShieldBonus)
-	evalWeights[wDoubledPawn] = both(doubledPawnPenalty)
-	evalWeights[wIsolatedPawn] = both(isolatedPawnPenalty)
-
-	for rank, bonus := range passedPawnRankBonus {
-		evalWeights[wPassed+rank] = both(bonus)
-		evalWeights[wPassedBlocked+rank] = both(bonus / blockedPassedPawnDivisor)
-	}
-
-	// Tuned values (tools/texel writes eval_params.go) override the defaults by
-	// name, so a weight added since the last tuning run just keeps its default.
 	for i := range evalWeights {
-		if w, ok := tunedWeights[WeightName(i)]; ok {
+		name := WeightName(i)
+		if w, ok := tunedWeights[name]; ok {
 			evalWeights[i] = w
+		} else {
+			evalWeights[i] = bootstrapWeights[name]
 		}
 	}
 }

@@ -227,3 +227,17 @@ func TestTunedWeightsKnown(t *testing.T) {
 		}
 	}
 }
+
+// TestBootstrapWeightsKnown is TestTunedWeightsKnown for bootstrapWeights, which
+// is looked up by name the same way.
+func TestBootstrapWeightsKnown(t *testing.T) {
+	names := map[string]bool{}
+	for i := range NumWeights {
+		names[WeightName(i)] = true
+	}
+	for name := range bootstrapWeights {
+		if !names[name] {
+			t.Errorf("bootstrapWeights has %q, which is not a weight name", name)
+		}
+	}
+}

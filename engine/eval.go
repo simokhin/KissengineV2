@@ -2,33 +2,10 @@ package engine
 
 const totalPhase = 24
 
-const (
-	knightMobilityBonus = 4
-	bishopMobilityBonus = 3
-	rookMobilityBonus   = 2
-	queenMobilityBonus  = 1
-
-	bishopPairBonus = 30
-
-	openFileBonus     = 15
-	semiOpenFileBonus = 8
-
-	pawnShieldBonus = 10
-)
-
-const (
-	doubledPawnPenalty  = -10
-	isolatedPawnPenalty = -15
-)
-
-var passedPawnRankBonus = [8]int{0, 5, 10, 20, 35, 60, 100, 150}
-
-// blockedPassedPawnDivisor divides a passed pawn's bonus while the square in
-// front of it is occupied: a blockaded pawn can't advance, so it is worth much
-// less than a free one (at rank 6/7 the full bonus once made the engine sell a
-// queen for a pawn that then sat blocked and was lost).
-const blockedPassedPawnDivisor = 2
-
+// pieceValues are the piece values SEE and move ordering use. They are not the
+// evaluation's weights (those live in evalWeights, see eval_weights.go); they
+// are fixed here so that a retune of the evaluation doesn't silently change
+// the search's move ordering and pruning.
 var pieceValues = [7]int{
 	Pawn:   100,
 	Knight: 320,
@@ -36,17 +13,6 @@ var pieceValues = [7]int{
 	Rook:   500,
 	Queen:  900,
 	King:   0,
-}
-
-// pst holds piece-square tables indexed by piece type, giving each square
-// a positional bonus/penalty from White's perspective (mirror via sq^56 for Black)
-var pst = [7][64]int{
-	Pawn:   pawnPST,
-	Knight: knightPST,
-	Bishop: bishopPST,
-	Rook:   rookPST,
-	Queen:  queenPST,
-	King:   kingPST,
 }
 
 var phaseWeights = [7]int{
