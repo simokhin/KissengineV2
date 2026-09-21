@@ -21,6 +21,18 @@ func Weights() [][2]int {
 	return w
 }
 
+// SetWeights replaces the weights with w, laid out like Weights. It exists for
+// the tuner and tests, which check their own arithmetic against Evaluate; it
+// must not run during a search.
+func SetWeights(w [][2]int) {
+	if len(w) != numWeights {
+		panic("SetWeights: got " + strconv.Itoa(len(w)) + " weights, want " + strconv.Itoa(numWeights))
+	}
+	for i, v := range w {
+		evalWeights[i] = weight{mg: v[0], eg: v[1]}
+	}
+}
+
 // TraceEntry says that a weight was counted Count times more for White than
 // for Black.
 type TraceEntry struct {
@@ -47,6 +59,18 @@ func Trace(pos *Position) (entries []TraceEntry, phase int) {
 	}
 
 	return entries, gamePhase(pos)
+}
+
+// PSTIndex returns the index of the piece-square weight of piece type pt (in
+// PieceType order: pawn, rook, knight, bishop, queen, king) on table position
+// sq, the square numbered from a8 as the tables in pst.go are.
+func PSTIndex(pt, sq int) int {
+	return wPST + pt*64 + sq
+}
+
+// PieceName returns the name of piece type pt as used by WeightName.
+func PieceName(pt int) string {
+	return pieceNames[pt]
 }
 
 var pieceNames = [...]string{Pawn: "pawn", Rook: "rook", Knight: "knight", Bishop: "bishop", Queen: "queen", King: "king"}

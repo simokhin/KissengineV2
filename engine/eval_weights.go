@@ -72,6 +72,14 @@ func init() {
 		evalWeights[wPassed+rank] = both(bonus)
 		evalWeights[wPassedBlocked+rank] = both(bonus / blockedPassedPawnDivisor)
 	}
+
+	// Tuned values (tools/texel writes eval_params.go) override the defaults by
+	// name, so a weight added since the last tuning run just keeps its default.
+	for i := range evalWeights {
+		if w, ok := tunedWeights[WeightName(i)]; ok {
+			evalWeights[i] = w
+		}
+	}
 }
 
 // evalAcc accumulates weight*count terms into separate middlegame and

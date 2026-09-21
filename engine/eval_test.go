@@ -212,3 +212,18 @@ func TestWeightNames(t *testing.T) {
 		}
 	}
 }
+
+// TestTunedWeightsKnown checks that every name in tunedWeights is a real
+// weight: init applies the overrides by name, so a stale or misspelled entry
+// (say, after a feature was renamed) would otherwise be silently ignored.
+func TestTunedWeightsKnown(t *testing.T) {
+	names := map[string]bool{}
+	for i := range NumWeights {
+		names[WeightName(i)] = true
+	}
+	for name := range tunedWeights {
+		if !names[name] {
+			t.Errorf("tunedWeights has %q, which is not a weight name", name)
+		}
+	}
+}
