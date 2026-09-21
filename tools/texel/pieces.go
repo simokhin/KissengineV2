@@ -70,7 +70,7 @@ func pieceValuesFromLines(lines [][]byte) ([7]int, error) {
 
 	var positions []*engine.Position
 	for i := 0; i < len(lines); i += step {
-		pos, _, err := parseEPDLine(lines[i])
+		pos, _, err := parseLine(lines[i])
 		if err != nil {
 			return [7]int{}, fmt.Errorf("line %d: %w", i+1, err)
 		}

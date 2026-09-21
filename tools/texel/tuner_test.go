@@ -56,7 +56,43 @@ func weightsToX(w [][2]int) []float64 {
 	return x
 }
 
-func TestParseEPDLine(t *testing.T) {
+// TestReadLinesPoolsFiles: a comma-separated path reads several files in order,
+// skips blank lines, and -limit applies to the pooled lines.
+func TestReadLinesPoolsFiles(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.epd"), filepath.Join(dir, "b.book")
+	os.WriteFile(a, []byte("A1\n\nA2\n"), 0o644)
+	os.WriteFile(b, []byte("B1\nB2"), 0o644) // no trailing newline
+
+	for _, tc := range []struct {
+		path  string
+		limit int
+		want  string
+	}{
+		{a, 0, "A1 A2"},
+		{a + "," + b, 0, "A1 A2 B1 B2"},
+		{a + "," + b, 3, "A1 A2 B1"},
+		{a + "," + b, 1, "A1"},
+	} {
+		lines, err := readLines(tc.path, tc.limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, l := range lines {
+			got = append(got, string(l))
+		}
+		if strings.Join(got, " ") != tc.want {
+			t.Errorf("readLines(limit %d) = %v, want %s", tc.limit, got, tc.want)
+		}
+	}
+
+	if _, err := readLines(a+","+filepath.Join(dir, "missing"), 0); err == nil {
+		t.Error("a missing second file was not reported")
+	}
+}
+
+func TestParseLine(t *testing.T) {
 	for _, tc := range []struct {
 		line string
 		want float32
@@ -64,16 +100,22 @@ func TestParseEPDLine(t *testing.T) {
 		{`r2qkr2/p1pp1ppp/1pn1pn2/2P5/3Pb3/2N1P3/PP3PPP/R1B1KB1R b KQq - c9 "0-1";`, 0},
 		{`4Q3/8/8/8/6k1/4K2p/3N4/5q2 b - - c9 "1/2-1/2";`, 0.5},
 		{`rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - c9 "1-0";`, 1},
+		{`5r2/p4pk1/2pb4/8/1p2rN2/4p3/PPPB4/3K4 w - - 0 3 [0.0]`, 0},
+		{`1r4k1/6p1/7p/4p3/R7/3rPNP1/1b3P1P/5RK1 b - - 0 1 [1.0]`, 1},
+		{`2r2rk1/pp3pb1/7p/1b1Ppqp1/4N3/4P1P1/PPQ3BP/2RR2K1 w - - 0 1 [0.5]`, 0.5},
 	} {
-		pos, got, err := parseEPDLine([]byte(tc.line))
+		pos, got, err := parseLine([]byte(tc.line))
 		if err != nil || got != tc.want || pos == nil {
-			t.Errorf("parseEPDLine(%q) = %v, %v, %v; want result %v", tc.line, pos, got, err, tc.want)
+			t.Errorf("parseLine(%q) = %v, %v, %v; want result %v", tc.line, pos, got, err, tc.want)
 		}
 	}
 
-	for _, bad := range []string{``, `8/8/8/8/8/8/8/8 w - -`, `4k3/8/8/8/8/8/8/4K3 w - - c9 "2-0";`} {
-		if _, _, err := parseEPDLine([]byte(bad)); err == nil {
-			t.Errorf("parseEPDLine(%q) succeeded, want an error", bad)
+	for _, bad := range []string{
+		``, `8/8/8/8/8/8/8/8 w - -`, `4k3/8/8/8/8/8/8/4K3 w - - c9 "2-0";`,
+		`4k3/8/8/8/8/8/8/4K3 w - - 0 1 [0.7]`, `4k3/8/8/8/8/8/8/4K3 w - - 0 1 1.0`, `4k3/8/8/8/8/8/8/4K3 w - - [1.0]`,
+	} {
+		if _, _, err := parseLine([]byte(bad)); err == nil {
+			t.Errorf("parseLine(%q) succeeded, want an error", bad)
 		}
 	}
 }

@@ -25,7 +25,7 @@ import (
 
 func main() {
 	var (
-		dataPath = flag.String("data", "data/quiet-labeled.epd", "EPD file with `c9 \"result\";` labels")
+		dataPath = flag.String("data", "data/quiet-labeled.epd", "labeled positions: Zurichess EPD (`c9 \"1-0\";`) or lichess-big3-resolved (`[1.0]`); several files may be given separated by commas and are pooled")
 		outPath  = flag.String("out", "engine/eval_params.go", "generated Go file to write")
 		epochs   = flag.Int("epochs", 1000, "full-batch Adam epochs")
 		lr       = flag.Float64("lr", 3, "initial learning rate, in centipawns per step")
@@ -53,7 +53,7 @@ func main() {
 func run(dataPath, outPath string, epochs int, lr, reg float64, minCount, limit int, dry, measurePieces bool) error {
 	start := time.Now()
 
-	train, test, lines, err := loadEPD(dataPath, limit)
+	train, test, lines, err := loadData(dataPath, limit)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func run(dataPath, outPath string, epochs int, lr, reg float64, minCount, limit 
 // engine's current weights and leaves the weights themselves alone, so the
 // effect of new piece values can be tested on its own.
 func runMeasureOnly(dataPath, outPath string, limit int, dry bool) error {
-	lines, err := readEPDLines(dataPath, limit)
+	lines, err := readLines(dataPath, limit)
 	if err != nil {
 		return err
 	}
@@ -252,7 +252,7 @@ func verifyAgainstEngine(lines [][]byte, tuned [][2]int, scale float64) error {
 	sample := newDataset()
 	var positions []*engine.Position
 	for i := 0; i < len(lines); i += step {
-		pos, result, err := parseEPDLine(lines[i])
+		pos, result, err := parseLine(lines[i])
 		if err != nil {
 			return fmt.Errorf("line %d: %w", i+1, err)
 		}

@@ -32,6 +32,19 @@ func newDataset() *dataset {
 	return &dataset{start: []int32{0}}
 }
 
+// newDatasetWithCapacity is newDataset with room for the given number of
+// positions and trace entries, so that merging big datasets doesn't grow (and
+// briefly double) the slices.
+func newDatasetWithCapacity(positions, entries int) *dataset {
+	d := &dataset{
+		entries: make([]engine.TraceEntry, 0, entries),
+		start:   make([]int32, 1, positions+1),
+		phase:   make([]uint8, 0, positions),
+		result:  make([]float32, 0, positions),
+	}
+	return d
+}
+
 func (d *dataset) len() int {
 	return len(d.phase)
 }
@@ -54,25 +67,45 @@ func (d *dataset) appendDataset(o *dataset) {
 	d.result = append(d.result, o.result...)
 }
 
-// parseEPDLine parses a line of the Zurichess format,
-// `<placement> <side> <castling> <ep> c9 "1-0";`, into the position and the
-// result from White's point of view. The lines carry no move counters.
-func parseEPDLine(line []byte) (*engine.Position, float32, error) {
+// parseLine parses one labeled position into the position and the result from
+// White's point of view. Two formats are understood, told apart by their tail:
+//
+//	<placement> <side> <castling> <ep> c9 "1-0";      Zurichess, no move counters
+//	<placement> <side> <castling> <ep> <half> <full> [1.0]   lichess-big3-resolved
+//
+// where the bracketed result is 1.0, 0.5 or 0.0. The move counters are ignored:
+// the evaluation doesn't use them.
+func parseLine(line []byte) (*engine.Position, float32, error) {
 	f := strings.Fields(string(line))
-	if len(f) < 6 || f[4] != "c9" {
-		return nil, 0, fmt.Errorf("want 4 FEN fields then c9 \"result\";, got %q", line)
-	}
 
 	var result float32
-	switch strings.Trim(f[5], `";`) {
-	case "1-0":
-		result = 1
-	case "0-1":
-		result = 0
-	case "1/2-1/2":
-		result = 0.5
+	switch {
+	case len(f) == 6 && f[4] == "c9":
+		switch strings.Trim(f[5], `";`) {
+		case "1-0":
+			result = 1
+		case "0-1":
+			result = 0
+		case "1/2-1/2":
+			result = 0.5
+		default:
+			return nil, 0, fmt.Errorf("unknown result %s", f[5])
+		}
+
+	case len(f) == 7 && strings.HasPrefix(f[6], "[") && strings.HasSuffix(f[6], "]"):
+		switch f[6] {
+		case "[1.0]":
+			result = 1
+		case "[0.5]":
+			result = 0.5
+		case "[0.0]":
+			result = 0
+		default:
+			return nil, 0, fmt.Errorf("unknown result %s", f[6])
+		}
+
 	default:
-		return nil, 0, fmt.Errorf("unknown result %s", f[5])
+		return nil, 0, fmt.Errorf(`want 4 FEN fields then c9 "result"; or 6 FEN fields then [result], got %q`, line)
 	}
 
 	return engine.ParseFEN(strings.Join(f[:4], " ") + " 0 1"), result, nil
@@ -88,33 +121,42 @@ func isTestPosition(i int) bool {
 	return z%10 == 0
 }
 
-// readEPDLines returns the non-empty lines of the file (the first limit of
-// them if limit > 0).
-func readEPDLines(path string, limit int) ([][]byte, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
+// readLines returns the non-empty lines of the file (the first limit of
+// them if limit > 0). path may name several files separated by commas; their
+// lines are concatenated in that order, and each may use either format.
+func readLines(path string, limit int) ([][]byte, error) {
 	var lines [][]byte
-	for _, l := range bytes.Split(raw, []byte{'\n'}) {
-		if len(bytes.TrimSpace(l)) > 0 {
-			lines = append(lines, l)
+
+	for _, name := range strings.Split(path, ",") {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			return nil, err
 		}
-	}
-	if limit > 0 && len(lines) > limit {
-		lines = lines[:limit]
+
+		// Walk the file by hand instead of bytes.Split so that a small -limit
+		// doesn't first cut a 7M-line file into 7M slices.
+		for len(raw) > 0 && (limit == 0 || len(lines) < limit) {
+			var line []byte
+			if i := bytes.IndexByte(raw, '\n'); i >= 0 {
+				line, raw = raw[:i], raw[i+1:]
+			} else {
+				line, raw = raw, nil
+			}
+			if len(bytes.TrimSpace(line)) > 0 {
+				lines = append(lines, line)
+			}
+		}
 	}
 
 	return lines, nil
 }
 
-// loadEPD reads the file (the first limit lines if limit > 0) and returns the
+// loadData reads the file (the first limit lines if limit > 0) and returns the
 // training and held-out datasets plus the raw lines, which the final check
 // against engine.Evaluate reuses. Lines are processed in parallel but merged
 // in file order, so the result doesn't depend on the number of CPUs.
-func loadEPD(path string, limit int) (train, test *dataset, lines [][]byte, err error) {
-	lines, err = readEPDLines(path, limit)
+func loadData(path string, limit int) (train, test *dataset, lines [][]byte, err error) {
+	lines, err = readLines(path, limit)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -131,7 +173,7 @@ func loadEPD(path string, limit int) (train, test *dataset, lines [][]byte, err 
 			tr, te := newDataset(), newDataset()
 			trains[w], tests[w] = tr, te
 			for i := len(lines) * w / workers; i < len(lines)*(w+1)/workers; i++ {
-				pos, result, perr := parseEPDLine(lines[i])
+				pos, result, perr := parseLine(lines[i])
 				if perr != nil {
 					errs[w] = fmt.Errorf("line %d: %w", i+1, perr)
 					return
@@ -146,13 +188,27 @@ func loadEPD(path string, limit int) (train, test *dataset, lines [][]byte, err 
 	}
 	wg.Wait()
 
-	train, test = newDataset(), newDataset()
+	var trainPositions, trainEntries, testPositions, testEntries int
 	for w := range workers {
 		if errs[w] != nil {
 			return nil, nil, nil, errs[w]
 		}
+		trainPositions += trains[w].len()
+		trainEntries += len(trains[w].entries)
+		testPositions += tests[w].len()
+		testEntries += len(tests[w].entries)
+	}
+
+	// Copy the parts into exactly-sized datasets, releasing each part as soon as
+	// it is in, so the peak is about one copy of the data plus one part instead
+	// of two copies (a few GB for the 7M-position file).
+	train = newDatasetWithCapacity(trainPositions, trainEntries)
+	test = newDatasetWithCapacity(testPositions, testEntries)
+	for w := range workers {
 		train.appendDataset(trains[w])
 		test.appendDataset(tests[w])
+		trains[w], tests[w] = nil, nil
+		runtime.GC()
 	}
 
 	return train, test, lines, nil
