@@ -41,12 +41,62 @@ type Info struct {
 // and only one legal move Search returns it at once: there is nothing to
 // choose, so thinking would only spend clock.
 func Search(ctx context.Context, pos Position, history []uint64, maxDepth int, onInfo func(Info)) (Move, Info) {
+	return SearchSoft(ctx, pos, history, maxDepth, 0, onInfo)
+}
+
+// SearchSoft is Search with time management. The deadline of ctx is the hard
+// limit: the search never runs past it. soft (0 for none; it needs a deadline on
+// ctx, and only means something below it) is the time the search aims to spend.
+// At the soft limit a settled position stops, and iterations that the last ones
+// predict won't finish in time aren't started, so the clock keeps the rest for
+// later moves. An unsettled one (the best move just changed, the score fell, the
+// first move failed low or another took over) carries on towards the hard limit,
+// where the work of a cut-off iteration is still used, see Search.
+func SearchSoft(ctx context.Context, pos Position, history []uint64, maxDepth int, soft time.Duration, onInfo func(Info)) (Move, Info) {
 	if maxDepth <= 0 || maxDepth > MaxDepth {
 		maxDepth = MaxDepth
 	}
 
 	start := time.Now()
+
+	hardEnd, timed := ctx.Deadline()
+	hard := time.Duration(0)
+	if timed {
+		hard = hardEnd.Sub(start)
+	}
+	if !timed || soft >= hard {
+		soft = 0 // nothing to manage: no deadline, or the soft limit is the hard one
+	}
+
 	s := &SearchState{ctx: ctx}
+
+	// The soft limit: when it comes, stop unless the position is unsettled, in
+	// which case look again shortly (the hard deadline stops the search anyway).
+	// It needs a context of its own to cancel; without a soft limit the caller's
+	// is used as it is.
+	if soft > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		s.ctx = ctx
+
+		go func() {
+			timer := time.NewTimer(soft)
+			defer timer.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+					if !s.unstable.Load() {
+						cancel()
+						return
+					}
+					timer.Reset(softRecheck)
+				}
+			}
+		}()
+	}
 
 	var info Info
 
@@ -72,7 +122,7 @@ func Search(ctx context.Context, pos Position, history []uint64, maxDepth int, o
 		complete(bestMove, 1, bestScore)
 	}
 
-	if _, timed := ctx.Deadline(); timed {
+	if timed {
 		var legal MoveList
 		GenerateLegalMoves(pos, pos.SideToMove, &legal)
 		if len(legal.Slice()) == 1 {
@@ -81,12 +131,31 @@ func Search(ctx context.Context, pos Position, history []uint64, maxDepth int, o
 		}
 	}
 
+	// The move and score of the last completed iteration, which bestMove can run
+	// ahead of (a move that failed high is taken as best before its exact score).
+	lastMove, lastScore := bestMove, bestScore
+	s.prevScore, s.havePrev = lastScore, true
+
 	windowSize := 50
 	alpha, beta := bestScore-windowSize, bestScore+windowSize
+
+	// The times of the last two completed iterations, for the prediction of the
+	// next one. An iteration that is searched again with a wider window keeps its
+	// start time, so the repeat counts as part of it.
+	var lastIteration, previousIteration time.Duration
+	iterationStart := time.Now()
+	repeating := false
 
 	for depth := 2; depth <= maxDepth; depth++ {
 		if ctx.Err() != nil {
 			break
+		}
+
+		if !repeating {
+			if soft > 0 && lastIteration > 0 && !wantsIteration(time.Since(start), lastIteration, previousIteration, soft, hard, s.unstable.Load()) {
+				break
+			}
+			iterationStart = time.Now()
 		}
 
 		move, nodes, score := BestMove(s, pos, depth, history, alpha, beta)
@@ -105,11 +174,18 @@ func Search(ctx context.Context, pos Position, history []uint64, maxDepth int, o
 			}
 			alpha, beta = Minimum, Maximum
 			depth--
+			repeating = true
 			continue
 		}
+		repeating = false
+
+		s.unstable.Store(looksUnstable(move, score, lastMove, lastScore))
+		lastMove, lastScore = move, score
+		s.prevScore = score
+
+		previousIteration, lastIteration = lastIteration, time.Since(iterationStart)
 
 		bestMove = move
-		bestScore = score
 		complete(move, depth, score)
 
 		alpha, beta = score-windowSize, score+windowSize

@@ -133,12 +133,19 @@ func (u *uci) stopSearch() {
 func (u *uci) startSearch(limits goLimits) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	timeLimit, timed := limits.timeLimit(u.pos.SideToMove)
+	// The budget is the soft limit the search aims for; the context's deadline is
+	// the hard one, which a search of an unsettled position may run up to.
+	var soft time.Duration
+	budget, timed := limits.timeLimit(u.pos.SideToMove)
 	if timed {
 		var cancelTimeout context.CancelFunc
-		ctx, cancelTimeout = context.WithTimeout(ctx, timeLimit)
+		ctx, cancelTimeout = context.WithTimeout(ctx, limits.hardLimit(u.pos.SideToMove, budget))
 		parent := cancel
 		cancel = func() { cancelTimeout(); parent() }
+
+		if limits.movetime == 0 {
+			soft = budget // "movetime" is exact: it is spent in full
+		}
 	}
 
 	job := &searchJob{
@@ -154,7 +161,7 @@ func (u *uci) startSearch(limits goLimits) {
 		defer close(job.done)
 		defer cancel()
 
-		move, _ := engine.Search(ctx, pos, history, limits.depth, u.printInfo)
+		move, _ := engine.SearchSoft(ctx, pos, history, limits.depth, soft, u.printInfo)
 
 		// UCI: an infinite search must not report a move until it is stopped,
 		// even if it ran out of depth first.
@@ -305,6 +312,25 @@ func (l goLimits) timeLimit(sideToMove engine.Color) (time.Duration, bool) {
 	}
 
 	return 0, false
+}
+
+// hardLimit is the most a search may take when the clock decides how long:
+// three times the budget, but never more than a quarter of the time left plus the
+// increment (a flag loses the game), and never less than the budget. A fixed
+// "movetime" is exact and has no room to grow.
+func (l goLimits) hardLimit(sideToMove engine.Color, budget time.Duration) time.Duration {
+	if l.movetime > 0 || !l.hasClock {
+		return budget
+	}
+
+	myTime, myInc := l.wtime, l.winc
+	if sideToMove == engine.Black {
+		myTime, myInc = l.btime, l.binc
+	}
+
+	limit := min(3*budget, time.Duration(myTime/4+myInc)*time.Millisecond)
+
+	return max(budget, limit)
 }
 
 // handlePosition parses a "position [startpos | fen <fen>]

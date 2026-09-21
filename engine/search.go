@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"slices"
+	"sync/atomic"
 )
 
 const (
@@ -57,6 +58,16 @@ type SearchState struct {
 	// rootBest is the best move found by the last completed root search.
 	// The next iteration searches it first. Zero before the first iteration.
 	rootBest Move
+
+	// unstable is set while the root looks unsettled (the last iteration changed
+	// the best move or lowered the score, or this one already has: the first move
+	// has fallen or another has taken over). The soft time limit doesn't stop a
+	// search while it is set, see SearchSoft. Read by the timer goroutine.
+	unstable atomic.Bool
+
+	// prevScore is the score of the last completed iteration, valid if havePrev.
+	prevScore int
+	havePrev  bool
 
 	// rootPartial is, during a root search, the move that has beaten every move
 	// tried before it at the current depth, judged by searches that ran to
@@ -380,6 +391,9 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 			if s.ctx.Err() == nil && score > alpha {
 				s.rootPartial = move
 			}
+			if s.ctx.Err() == nil && s.havePrev && score <= s.prevScore-unstableDrop {
+				s.unstable.Store(true) // the move that looked best has fallen
+			}
 		} else {
 			// Null window: we only need to know whether this move beats alpha.
 			score = -s.Negamax(&pos, depth-1, 1, -alpha-1, -alpha, newHistory, false, 0)
@@ -387,12 +401,14 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 				// It beats the best move so far, however the re-search below ends.
 				previous := s.rootPartial
 				s.rootPartial = move
+				s.unstable.Store(true) // another move has taken over
 				score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
 				if s.ctx.Err() == nil && score <= alpha {
 					s.rootPartial = previous // the re-search didn't confirm it
 				}
 			} else if s.ctx.Err() == nil && score > alpha {
 				s.rootPartial = move // fail-high: at least beta
+				s.unstable.Store(true)
 			}
 		}
 

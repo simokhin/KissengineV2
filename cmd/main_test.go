@@ -247,6 +247,31 @@ func TestParseGoAndTimeLimit(t *testing.T) {
 	}
 }
 
+func TestHardLimit(t *testing.T) {
+	tests := []struct {
+		cmd    string
+		side   engine.Color
+		wantMs int
+	}{
+		{"go movetime 500", engine.White, 500},                                // exact: no room to grow
+		{"go wtime 60000 btime 30000 winc 1000 binc 500", engine.White, 9000}, // 3 x the 3000 ms budget
+		{"go wtime 60000 btime 30000 winc 1000 binc 500", engine.Black, 4500}, // 3 x 1500, a quarter of 30 s + 0.5 s is 8000
+		{"go wtime 1000 btime 1000 winc 100 binc 100", engine.White, 350},     // a quarter of the clock plus the increment caps 3 x 133
+		{"go wtime 60000 btime 60000 movestogo 1", engine.White, 30000},       // the budget itself is already above a quarter of the clock
+		{"go wtime 0 btime 0", engine.White, 50},                              // the floor budget, nothing to spare
+		{"go infinite", engine.White, 0},
+	}
+
+	for _, tt := range tests {
+		l := parseGo(strings.Fields(tt.cmd))
+		budget, _ := l.timeLimit(tt.side)
+
+		if got := l.hardLimit(tt.side, budget); int(got/time.Millisecond) != tt.wantMs {
+			t.Errorf("%q (side %d): hard limit %v, want %dms (budget %v)", tt.cmd, tt.side, got, tt.wantMs, budget)
+		}
+	}
+}
+
 func TestFormatScore(t *testing.T) {
 	tests := []struct {
 		score int
