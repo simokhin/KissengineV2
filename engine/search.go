@@ -12,9 +12,9 @@ const (
 )
 
 // losingCaptureOffset is subtracted from the MVV-LVA score of a capture that
-// loses material by SEE. It must exceed the largest MVV-LVA score (~9000) so
-// every losing capture ranks below every quiet move (score >= 0), while staying
-// far below the TT move's 1_000_000.
+// loses material by SEE. It must exceed the largest MVV-LVA score (~23000 with
+// the tuned piece values) so every losing capture ranks below every quiet move
+// (score >= 0), while staying far below the TT move's 1_000_000.
 const losingCaptureOffset = 100_000
 
 // scoredMove pairs a move with its precomputed ordering score.
@@ -400,6 +400,18 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 	return bestMove, s.nodes, alpha
 }
 
+// noisyBase is added to the score of every capture and queen promotion in
+// moveScore. The raw MVV-LVA value, victim*10 - attacker, is negative for a
+// queen taking a pawn once the queen is worth more than ten pawns, and it
+// would then rank below the killers (50/40) and the quiet moves; adding the
+// queen's value (the largest attacker) keeps every such move at or above
+// 10*pawn, whatever pieceValues holds after a retune. It shifts all these moves
+// alike, so their order among themselves is the plain MVV-LVA order.
+// TestNoisyScoreBands checks the resulting bands.
+func noisyBase() int {
+	return pieceValues[Queen]
+}
+
 // moveScore returns a priority score for move ordering: captures
 // of valuable pieces by less valuable attackers score highest (MVV-LVA).
 // The second return value reports whether m is a capture (including en
@@ -411,7 +423,7 @@ func moveScore(pos Position, m Move) (score int, capture bool) {
 	// are still searched late.
 	var promotionBonus int
 	if isQueenPromotion(m) {
-		promotionBonus = (pieceValues[Queen] - pieceValues[Pawn]) * 10
+		promotionBonus = (pieceValues[Queen]-pieceValues[Pawn])*10 + noisyBase()
 	}
 
 	captured := pos.PieceAt(m.To())
@@ -419,12 +431,12 @@ func moveScore(pos Position, m Move) (score int, capture bool) {
 	if captured == AllPieces {
 		attacker := pos.PieceAt(m.From())
 		if attacker == Pawn && m.From().File() != m.To().File() {
-			return pieceValues[Pawn]*10 - pieceValues[Pawn], true
+			return pieceValues[Pawn]*10 - pieceValues[Pawn] + noisyBase(), true
 		}
 		return promotionBonus, false
 	}
 	attacker := pos.PieceAt(m.From())
-	return pieceValues[captured]*10 - pieceValues[attacker] + promotionBonus, true
+	return pieceValues[captured]*10 - pieceValues[attacker] + noisyBase() + promotionBonus, true
 }
 
 // isQueenPromotion reports whether move m promotes a pawn to a queen.

@@ -2,19 +2,6 @@ package engine
 
 const totalPhase = 24
 
-// pieceValues are the piece values SEE and move ordering use. They are not the
-// evaluation's weights (those live in evalWeights, see eval_weights.go); they
-// are fixed here so that a retune of the evaluation doesn't silently change
-// the search's move ordering and pruning.
-var pieceValues = [7]int{
-	Pawn:   100,
-	Knight: 320,
-	Bishop: 330,
-	Rook:   500,
-	Queen:  900,
-	King:   0,
-}
-
 var phaseWeights = [7]int{
 	Knight: 1,
 	Bishop: 1,

@@ -88,16 +88,15 @@ func isTestPosition(i int) bool {
 	return z%10 == 0
 }
 
-// loadEPD reads the file (the first limit lines if limit > 0) and returns the
-// training and held-out datasets plus the raw lines, which the final check
-// against engine.Evaluate reuses. Lines are processed in parallel but merged
-// in file order, so the result doesn't depend on the number of CPUs.
-func loadEPD(path string, limit int) (train, test *dataset, lines [][]byte, err error) {
+// readEPDLines returns the non-empty lines of the file (the first limit of
+// them if limit > 0).
+func readEPDLines(path string, limit int) ([][]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
+	var lines [][]byte
 	for _, l := range bytes.Split(raw, []byte{'\n'}) {
 		if len(bytes.TrimSpace(l)) > 0 {
 			lines = append(lines, l)
@@ -105,6 +104,19 @@ func loadEPD(path string, limit int) (train, test *dataset, lines [][]byte, err 
 	}
 	if limit > 0 && len(lines) > limit {
 		lines = lines[:limit]
+	}
+
+	return lines, nil
+}
+
+// loadEPD reads the file (the first limit lines if limit > 0) and returns the
+// training and held-out datasets plus the raw lines, which the final check
+// against engine.Evaluate reuses. Lines are processed in parallel but merged
+// in file order, so the result doesn't depend on the number of CPUs.
+func loadEPD(path string, limit int) (train, test *dataset, lines [][]byte, err error) {
+	lines, err = readEPDLines(path, limit)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	workers := runtime.NumCPU()

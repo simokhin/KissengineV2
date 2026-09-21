@@ -33,10 +33,17 @@ func main() {
 		minCount = flag.Int("min-count", 100, "leave weights counted in fewer training positions than this at their starting value")
 		limit    = flag.Int("limit", 0, "use only the first N lines of the file (0 = all)")
 		dry      = flag.Bool("dry", false, "report the result but don't write -out")
+		measure  = flag.Bool("measure-only", false, "don't tune: keep the current weights and only re-measure the piece values")
 	)
 	flag.Parse()
 
-	if err := run(*dataPath, *outPath, *epochs, *lr, *reg, *minCount, *limit, *dry); err != nil {
+	var err error
+	if *measure {
+		err = runMeasureOnly(*dataPath, *outPath, *limit, *dry)
+	} else {
+		err = run(*dataPath, *outPath, *epochs, *lr, *reg, *minCount, *limit, *dry)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "texel:", err)
 		os.Exit(1)
 	}
@@ -88,6 +95,13 @@ func run(dataPath, outPath string, epochs int, lr, reg float64, minCount, limit 
 		return err
 	}
 
+	engine.SetWeights(tuned)
+	pieceValues, err := pieceValuesFromLines(lines)
+	if err != nil {
+		return err
+	}
+	printPieceValues(pieceValues)
+
 	if dry {
 		fmt.Println("dry run: not writing", outPath)
 		return nil
@@ -95,12 +109,48 @@ func run(dataPath, outPath string, epochs int, lr, reg float64, minCount, limit 
 
 	header := fmt.Sprintf("Tuned on %d positions of %s (%d held out): K = %.4f, held-out loss %.6f -> %.6f.",
 		train.len()+test.len(), dataPath, test.len(), k, startTest, endTest)
-	if err := writeParams(outPath, tuned, header); err != nil {
+	if err := writeParams(outPath, tuned, pieceValues, header); err != nil {
 		return err
 	}
 	fmt.Println("wrote", outPath, "in", time.Since(start).Round(time.Second))
 
 	return nil
+}
+
+// runMeasureOnly rewrites the piece values in the generated file from the
+// engine's current weights and leaves the weights themselves alone, so the
+// effect of new piece values can be tested on its own.
+func runMeasureOnly(dataPath, outPath string, limit int, dry bool) error {
+	lines, err := readEPDLines(dataPath, limit)
+	if err != nil {
+		return err
+	}
+
+	pieceValues, err := pieceValuesFromLines(lines)
+	if err != nil {
+		return err
+	}
+	printPieceValues(pieceValues)
+
+	if dry {
+		fmt.Println("dry run: not writing", outPath)
+		return nil
+	}
+
+	if err := writeParams(outPath, engine.Weights(), pieceValues, existingHeader(outPath)); err != nil {
+		return err
+	}
+	fmt.Println("wrote", outPath)
+
+	return nil
+}
+
+func printPieceValues(values [7]int) {
+	fmt.Print("measured piece values:")
+	for pt := range 5 {
+		fmt.Printf("  %s %d", pieceTypeNames[pt], values[pt])
+	}
+	fmt.Println()
 }
 
 // frozenWeights marks which entries of x must not move: weights counted in

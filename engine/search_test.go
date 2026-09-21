@@ -202,3 +202,59 @@ func TestMateScorePlyAdjustment(t *testing.T) {
 		t.Errorf("non-mate retrieve: want 150, got %d", got)
 	}
 }
+
+// TestNoisyScoreBands checks the ordering bands that moveScore's scale must
+// respect for any piece values, not just today's: every capture and queen
+// promotion scores above the highest killer bonus (50), so it is tried before
+// killers and quiet moves, and below losingCaptureOffset, so that subtracting
+// the offset puts a losing capture below every quiet move (score >= 0).
+func TestNoisyScoreBands(t *testing.T) {
+	saved := pieceValues
+	defer func() { pieceValues = saved }()
+
+	for name, values := range map[string][7]int{
+		"current":                 saved,
+		"classic":                 {Pawn: 100, Rook: 500, Knight: 320, Bishop: 330, Queen: 900},
+		"inflated (Q above 10 P)": {Pawn: 109, Rook: 576, Knight: 404, Bishop: 436, Queen: 1136},
+		"extreme":                 {Pawn: 60, Rook: 700, Knight: 600, Bishop: 600, Queen: 1500},
+	} {
+		pieceValues = values
+
+		for _, victim := range []PieceType{Pawn, Rook, Knight, Bishop, Queen} {
+			for _, attacker := range []PieceType{Pawn, Rook, Knight, Bishop, Queen, King} {
+				// The geometry is irrelevant to moveScore: it looks at what
+				// stands on the two squares.
+				var pos Position
+				pos.PutPiece(E4, White, attacker)
+				pos.PutPiece(E5, Black, victim)
+
+				score, capture := moveScore(pos, NewMove(E4, E5))
+				if !capture || score <= 50 {
+					t.Errorf("%s: %v takes %v scores %d (capture=%v), must exceed the killer bonus 50", name, attacker, victim, score, capture)
+				}
+			}
+
+			// The highest score a move can get: a pawn capturing with a queen promotion.
+			var pos Position
+			pos.PutPiece(A7, White, Pawn)
+			pos.PutPiece(B8, Black, victim)
+
+			score, _ := moveScore(pos, NewPromotionMove(A7, B8, Queen))
+			if score >= losingCaptureOffset {
+				t.Errorf("%s: pawn takes %v with queen promotion scores %d, must stay below losingCaptureOffset %d", name, victim, score, losingCaptureOffset)
+			}
+		}
+
+		// A quiet queen promotion and en passant are noisy moves too.
+		var pos Position
+		pos.PutPiece(A7, White, Pawn)
+		if score, _ := moveScore(pos, NewPromotionMove(A7, A8, Queen)); score <= 50 || score >= losingCaptureOffset {
+			t.Errorf("%s: quiet queen promotion scores %d, want it between 50 and %d", name, score, losingCaptureOffset)
+		}
+		pos.PutPiece(E5, White, Pawn)
+		pos.PutPiece(D5, Black, Pawn)
+		if score, capture := moveScore(pos, NewMove(E5, D6)); !capture || score <= 50 {
+			t.Errorf("%s: en passant scores %d (capture=%v), want a capture above 50", name, score, capture)
+		}
+	}
+}

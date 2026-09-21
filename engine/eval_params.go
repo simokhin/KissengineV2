@@ -423,3 +423,17 @@ var tunedWeights = map[string]weight{
 	"passed-blocked/rank7": {67, 90},
 	"passed-blocked/rank8": {75, 75},
 }
+
+// pieceValues are the piece values SEE and move ordering use, written by
+// tools/texel as the average change of Evaluate when one piece of that type is
+// removed. They are not evalWeights (a piece's worth in the evaluation also
+// depends on where it stands, on the phase and on the mobility and pair
+// bonuses), but the same numbers Evaluate produces, measured.
+var pieceValues = [7]int{
+	Pawn:   100,
+	Rook:   500,
+	Knight: 320,
+	Bishop: 330,
+	Queen:  900,
+	King:   0,
+}
