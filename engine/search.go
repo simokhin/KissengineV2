@@ -57,6 +57,13 @@ type SearchState struct {
 	// rootBest is the best move found by the last completed root search.
 	// The next iteration searches it first. Zero before the first iteration.
 	rootBest Move
+
+	// rootPartial is, during a root search, the move that has beaten every move
+	// tried before it at the current depth, judged by searches that ran to
+	// completion. If the search is cut off, this is the best move known so far
+	// (zero if none is: even the first move hasn't finished, or it failed low).
+	// Reset by BestMove.
+	rootPartial Move
 }
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
@@ -359,23 +366,41 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 	})
 
 	bestMove := moves[0]
+	s.rootPartial = 0
 
 	for i, move := range moves {
 		undo := pos.MakeMove(move)
 		newHistory := append(history, pos.Hash())
 
+		// A search that was cut off returns garbage, so a score only counts (for
+		// bestMove and for rootPartial) if the context was still alive after it.
 		var score int
 		if i == 0 {
 			score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
+			if s.ctx.Err() == nil && score > alpha {
+				s.rootPartial = move
+			}
 		} else {
 			// Null window: we only need to know whether this move beats alpha.
 			score = -s.Negamax(&pos, depth-1, 1, -alpha-1, -alpha, newHistory, false, 0)
-			if score > alpha && score < beta {
+			if s.ctx.Err() == nil && score > alpha && score < beta {
+				// It beats the best move so far, however the re-search below ends.
+				previous := s.rootPartial
+				s.rootPartial = move
 				score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
+				if s.ctx.Err() == nil && score <= alpha {
+					s.rootPartial = previous // the re-search didn't confirm it
+				}
+			} else if s.ctx.Err() == nil && score > alpha {
+				s.rootPartial = move // fail-high: at least beta
 			}
 		}
 
 		pos.UnmakeMove(move, undo)
+
+		if s.ctx.Err() != nil {
+			break
+		}
 
 		if score > alpha {
 			alpha = score

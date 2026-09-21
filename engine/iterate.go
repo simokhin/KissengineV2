@@ -13,7 +13,9 @@ const MaxDepth = 64
 // maxPVLength caps how many plies of principal variation are reported.
 const maxPVLength = 32
 
-// Info describes the last completed iteration of a search.
+// Info describes the last completed iteration of a search. The move Search
+// returns can differ from PV[0] when the search was cut off during a later
+// iteration that had already found a better one (see Search).
 type Info struct {
 	Depth int
 	Score int
@@ -28,10 +30,16 @@ type Info struct {
 // onInfo, if not nil, is called after every completed iteration.
 //
 // Depth 1 always seeds the best move with a real legal move (even under
-// extreme time pressure), and later depths only overwrite it once they finish
-// completely -- a depth cut short by ctx is discarded rather than allowed to
-// replace a good, fully-searched result with a worse, half-searched one. If
-// the root has no legal moves the returned move is Move(0).
+// extreme time pressure), and later depths overwrite it once they finish
+// completely. A depth cut short by ctx is not allowed to replace a good,
+// fully-searched result with a half-searched one, with one exception: a root
+// move that has already beaten every move tried before it at that depth (the
+// previous best is searched first), by searches that ran to completion, is a
+// better move than the previous depth's, so it is returned instead. That saves
+// the work of an iteration that was mostly done when time ran out. If the root
+// has no legal moves the returned move is Move(0), and with a deadline on ctx
+// and only one legal move Search returns it at once: there is nothing to
+// choose, so thinking would only spend clock.
 func Search(ctx context.Context, pos Position, history []uint64, maxDepth int, onInfo func(Info)) (Move, Info) {
 	if maxDepth <= 0 || maxDepth > MaxDepth {
 		maxDepth = MaxDepth
@@ -64,6 +72,15 @@ func Search(ctx context.Context, pos Position, history []uint64, maxDepth int, o
 		complete(bestMove, 1, bestScore)
 	}
 
+	if _, timed := ctx.Deadline(); timed {
+		var legal MoveList
+		GenerateLegalMoves(pos, pos.SideToMove, &legal)
+		if len(legal.Slice()) == 1 {
+			info.Time = time.Since(start)
+			return bestMove, info
+		}
+	}
+
 	windowSize := 50
 	alpha, beta := bestScore-windowSize, bestScore+windowSize
 
@@ -76,10 +93,16 @@ func Search(ctx context.Context, pos Position, history []uint64, maxDepth int, o
 		info.Nodes += nodes
 
 		if ctx.Err() != nil {
+			if s.rootPartial != 0 {
+				bestMove = s.rootPartial
+			}
 			break
 		}
 
 		if score <= alpha || score >= beta {
+			if score >= beta {
+				bestMove = move // beat the window: better than the previous best, though not yet exactly scored
+			}
 			alpha, beta = Minimum, Maximum
 			depth--
 			continue
