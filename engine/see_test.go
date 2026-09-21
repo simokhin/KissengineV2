@@ -7,25 +7,30 @@ import (
 
 // TestSEEKnownExchanges checks seeGE against hand-worked exchanges. want is the
 // exact SEE value for the mover, so seeGE must hold at want and fail at want+1.
+// The values are spelled in terms of pieceValues, which the tuner rewrites, so
+// the exchanges stay right whatever numbers it measures.
 func TestSEEKnownExchanges(t *testing.T) {
+	pawn, knight, bishop, rook, queen := pieceValues[Pawn], pieceValues[Knight], pieceValues[Bishop], pieceValues[Rook], pieceValues[Queen]
+
 	tests := []struct {
 		name string
 		fen  string
 		move string
 		want int
 	}{
-		{"undefended pawn", "4k3/8/8/3p4/8/8/8/3RK3 w - - 0 1", "d1d5", 100},
-		{"queen takes pawn defended by pawn", "4k3/8/2p5/3p4/8/8/8/3QK3 w - - 0 1", "d1d5", 100 - 900},
-		{"rook takes pawn defended by pawn", "4k3/8/2p5/3p4/8/8/8/3RK3 w - - 0 1", "d1d5", 100 - 500},
+		{"undefended pawn", "4k3/8/8/3p4/8/8/8/3RK3 w - - 0 1", "d1d5", pawn},
+		{"queen takes pawn defended by pawn", "4k3/8/2p5/3p4/8/8/8/3QK3 w - - 0 1", "d1d5", pawn - queen},
+		{"rook takes pawn defended by pawn", "4k3/8/2p5/3p4/8/8/8/3RK3 w - - 0 1", "d1d5", pawn - rook},
 		{"equal knight trade", "4k3/8/2p5/3n4/8/2N5/8/4K3 w - - 0 1", "c3d5", 0},
-		{"bishop takes defended knight", "4k3/8/4p3/3n4/8/8/6B1/4K3 w - - 0 1", "g2d5", 320 - 330},
-		{"black to move", "3qk3/8/8/8/3P4/2P5/8/4K3 b - - 0 1", "d8d4", 100 - 900},
+		{"bishop takes defended knight", "4k3/8/4p3/3n4/8/8/6B1/4K3 w - - 0 1", "g2d5", knight - bishop},
+		{"black to move", "3qk3/8/8/8/3P4/2P5/8/4K3 b - - 0 1", "d8d4", pawn - queen},
 		// The second rook only joins the exchange through the x-ray behind the
-		// first: Rxd5 Rxd5 Rxd5 nets a pawn. Without x-ray handling this is -400.
-		{"rook battery x-ray", "3rk3/8/8/3p4/8/8/3R4/3RK3 w - - 0 1", "d2d5", 100},
-		{"king recaptures", "8/8/8/3p4/4k3/8/8/3RK3 w - - 0 1", "d1d5", 100 - 500},
+		// first: Rxd5 Rxd5 Rxd5 nets a pawn. Without x-ray handling this is a
+		// rook down.
+		{"rook battery x-ray", "3rk3/8/8/3p4/8/8/3R4/3RK3 w - - 0 1", "d2d5", pawn},
+		{"king recaptures", "8/8/8/3p4/4k3/8/8/3RK3 w - - 0 1", "d1d5", pawn - rook},
 		// The black king can't recapture: Rd1 x-rays d5 once Rd2 has moved there.
-		{"king cannot recapture into x-ray", "8/8/8/3p4/4k3/8/3R4/3RK3 w - - 0 1", "d2d5", 100},
+		{"king cannot recapture into x-ray", "8/8/8/3p4/4k3/8/3R4/3RK3 w - - 0 1", "d2d5", pawn},
 	}
 
 	for _, tt := range tests {
