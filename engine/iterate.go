@@ -13,6 +13,12 @@ const MaxDepth = 64
 // maxPVLength caps how many plies of principal variation are reported.
 const maxPVLength = 32
 
+// aspirationDelta is the half-width of the first aspiration window tried
+// after every completed iteration, and the starting size of the widening
+// step on a failure (doubling with every further failure at that depth).
+// Untuned; the value carries over from the previous fixed +/-50 window.
+const aspirationDelta = 50
+
 // Info describes the last completed iteration of a search. The move Search
 // returns can differ from PV[0] when the search was cut off during a later
 // iteration that had already found a better one (see Search).
@@ -136,8 +142,8 @@ func SearchSoft(ctx context.Context, pos Position, history []uint64, maxDepth in
 	lastMove, lastScore := bestMove, bestScore
 	s.prevScore, s.havePrev = lastScore, true
 
-	windowSize := 50
-	alpha, beta := bestScore-windowSize, bestScore+windowSize
+	delta := aspirationDelta
+	alpha, beta := max(bestScore-delta, Minimum), min(bestScore+delta, Maximum)
 
 	// The times of the last two completed iterations, for the prediction of the
 	// next one. An iteration that is searched again with a wider window keeps its
@@ -172,7 +178,19 @@ func SearchSoft(ctx context.Context, pos Position, history []uint64, maxDepth in
 			if score >= beta {
 				bestMove = move // beat the window: better than the previous best, though not yet exactly scored
 			}
-			alpha, beta = Minimum, Maximum
+
+			// Widen only the bound that failed, by a delta that doubles on
+			// every further failure at this depth; the other bound is left
+			// alone, since nothing said it was wrong. max/min clamp it open
+			// to (Minimum, Maximum) after enough doublings, rather than
+			// jumping there on the first failure the way a fixed window
+			// re-searched at full width would.
+			delta *= 2
+			if score <= alpha {
+				alpha = max(score-delta, Minimum)
+			} else {
+				beta = min(score+delta, Maximum)
+			}
 			depth--
 			repeating = true
 			continue
@@ -188,7 +206,8 @@ func SearchSoft(ctx context.Context, pos Position, history []uint64, maxDepth in
 		bestMove = move
 		complete(move, depth, score)
 
-		alpha, beta = score-windowSize, score+windowSize
+		delta = aspirationDelta
+		alpha, beta = max(score-delta, Minimum), min(score+delta, Maximum)
 	}
 
 	info.Time = time.Since(start)
