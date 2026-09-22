@@ -12,6 +12,17 @@ const (
 	Maximum   = MateValue + 1
 )
 
+// mateBound is the size of a score from which it counts as a mate score (they
+// are MateValue minus the ply, so anything closer to MateValue than this).
+const mateBound = MateValue - 1000
+
+// lmpLimit[depth] is the index in the move ordering from which a quiet move is
+// pruned without being searched, at a node of that depth (late move pruning);
+// depths beyond the table are not pruned. The index counts every move before it,
+// captures included, and the values (8, 12, 16, 20, 24) are the ones Blunder
+// uses; they are untuned here.
+var lmpLimit = [...]int{0, 8, 12, 16, 20, 24}
+
 // losingCaptureOffset is subtracted from the MVV-LVA score of a capture that
 // loses material by SEE. It must exceed the largest MVV-LVA score (~23000 with
 // the tuned piece values) so every losing capture ranks below every quiet move
@@ -42,6 +53,21 @@ func sortMovesByScore(moves []Move, score func(Move) int) {
 	for i, sm := range sorted {
 		moves[i] = sm.move
 	}
+}
+
+// pickBest moves the highest-scoring move among moves[i:] to position i
+// (swapping the scores along) and returns it. Called with i = 0, 1, 2, ... it
+// yields the moves in descending score order without sorting the whole list.
+func pickBest(moves []Move, scores []int32, i int) Move {
+	best := i
+	for j := i + 1; j < len(moves); j++ {
+		if scores[j] > scores[best] {
+			best = j
+		}
+	}
+	moves[i], moves[best] = moves[best], moves[i]
+	scores[i], scores[best] = scores[best], scores[i]
+	return moves[i]
 }
 
 type SearchState struct {
@@ -180,11 +206,6 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	generateLegalMoves(*pos, pos.SideToMove, inCheck, &moveList)
 	moves := moveList.Slice()
 
-	// Order moves (ttMove => captures => killers => others)
-	sortMovesByScore(moves, func(m Move) int {
-		return s.orderScore(*pos, ply, m, entry.bestMove)
-	})
-
 	// Check Mate/Stalemate
 	if len(moves) == 0 {
 		if inCheck {
@@ -193,22 +214,49 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		return 0
 	}
 
+	// Order moves (ttMove => captures => killers => others): score once here,
+	// then pickBest selects the next move lazily, so a node that cuts off on
+	// its first moves never orders the rest.
+	var scores [maxMoves]int32
+	for i, m := range moves {
+		scores[i] = int32(s.orderScore(*pos, ply, m, entry.bestMove))
+	}
+
 	// Variables for creating ttEntry
 	var currentAlpha = alpha
 	var bestMove Move
 	var flag TTFlag
 
-	for i, move := range moves {
-		// LMR: decided before the move is made, since lmrReduction looks at what
-		// the move captures and after MakeMove the target square holds the mover.
-		reduction := s.lmrReduction(*pos, move, depth, i, ply, beta-alpha > 1, inCheck)
+	pvNode := beta-alpha > 1
+
+	// Late move pruning applies to null-window nodes outside check, and not while
+	// alpha is a mate score: skipping quiet moves there could miss the only
+	// defence and report a mate that isn't forced.
+	canPrune := !pvNode && !inCheck && alpha > -mateBound && alpha < mateBound
+
+	for i := range moves {
+		move := pickBest(moves, scores[:len(moves)], i)
+
+		// Both need the position before the move: after MakeMove the target
+		// square holds the mover, so a capture no longer looks like one.
+		quiet := !isCapture(*pos, move) && !move.IsPromotion()
+		reduction := s.lmrReduction(*pos, move, depth, i, ply, pvNode, inCheck)
 
 		undo := pos.MakeMove(move)
+		givesCheck := pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1)
+
+		// Late move pruning: near the horizon, a quiet move that the ordering put
+		// this far back (and that doesn't check) is not searched at all.
+		if canPrune && quiet && !givesCheck && depth < len(lmpLimit) && i >= lmpLimit[depth] {
+			pos.UnmakeMove(move, undo)
+			continue
+		}
+
 		newHistory := append(history, pos.Hash()) // Save new position's hash to history
 
 		search := func(a, b, reduction int) int {
 			// Check extension
-			if pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1) && extensions < 16 {
+			if givesCheck && extensions < 16 {
 				return -s.Negamax(pos, depth, ply+1, a, b, newHistory, false, extensions+1)
 			}
 
