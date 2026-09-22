@@ -206,14 +206,23 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		// high depth instead of eating a shrinking fraction of it.
 		R := 3 + depth/6
 
-		oldEnPassantSquare := pos.MakeNullMove()
+		// If an Exact/UpperBound entry already covers at least as much depth as
+		// the reduced null-move search would and its score is below beta, that
+		// search would very likely fail low too (a LowerBound entry says
+		// nothing here: it only proves a floor, not that beta is out of
+		// reach). Skip it and save those nodes.
+		skip := found && entry.depth >= depth-1-R && entry.flag != LowerBound && adjustedScore < beta
 
-		nullScore := -s.Negamax(pos, depth-1-R, ply+1, -beta, -beta+1, history, true, extensions)
+		if !skip {
+			oldEnPassantSquare := pos.MakeNullMove()
 
-		pos.UnmakeNullMove(oldEnPassantSquare)
+			nullScore := -s.Negamax(pos, depth-1-R, ply+1, -beta, -beta+1, history, true, extensions)
 
-		if nullScore >= beta {
-			return beta
+			pos.UnmakeNullMove(oldEnPassantSquare)
+
+			if nullScore >= beta {
+				return beta
+			}
 		}
 	}
 
