@@ -195,9 +195,9 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 	var staticEval int
 	if beta-alpha == 1 && !inCheck {
 		if pos.SideToMove == White {
-			staticEval = Evaluate(pos)
+			staticEval = staticEvalDispatch(pos)
 		} else {
-			staticEval = -Evaluate(pos)
+			staticEval = -staticEvalDispatch(pos)
 		}
 
 		// Static null move pruning
@@ -411,9 +411,9 @@ func Quiescence(ctx context.Context, pos *Position, nodes *uint64, alpha, beta, 
 
 	} else {
 		if pos.SideToMove == White {
-			standPat = Evaluate(pos)
+			standPat = staticEvalDispatch(pos)
 		} else {
-			standPat = -Evaluate(pos)
+			standPat = -staticEvalDispatch(pos)
 		}
 
 		if standPat >= beta {

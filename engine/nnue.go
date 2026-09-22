@@ -293,6 +293,34 @@ func (p *Position) nnueForward() int32 {
 // comment), so dequantizing fully needs QA*QB, not just QB.
 const nnueEvalScale = 400
 
+// useNNUE selects which static evaluation search.go's two call sites use.
+// Off by default, so search behavior and every existing test are unchanged
+// unless something explicitly opts in via SetUseNNUE — this is an A/B
+// comparison switch for the NNUE experiment (see nnue.go/nnue_test.go), not
+// a permanent feature: unconditionally swapping Evaluate for NNUEEvaluate
+// everywhere would change search behavior (static null move margins,
+// quiescence stand-pat, ...) throughout the test suite for a net that
+// isn't trained to adoption quality yet.
+var useNNUE = false
+
+// SetUseNNUE flips the switch above. Not concurrency-safe against a running
+// search, same as SetHashSize (tt.go) — call it only between searches.
+func SetUseNNUE(enabled bool) {
+	useNNUE = enabled
+}
+
+// staticEvalDispatch is what search.go actually calls: Evaluate(pos)
+// normally, or NNUEEvaluate() when useNNUE is set. Both share the
+// White-relative convention (see eval.go), so callers negate for Black to
+// move exactly as they did when calling Evaluate directly. (Named to avoid
+// colliding with eval.go's own unexported evaluate(pos, traces...).)
+func staticEvalDispatch(pos *Position) int {
+	if useNNUE {
+		return int(pos.NNUEEvaluate())
+	}
+	return Evaluate(pos)
+}
+
 // NNUEEvaluate returns the network's evaluation in centipawns, from White's
 // perspective — the same convention as Evaluate() in eval.go, so the two
 // are interchangeable at call sites (callers negate for Black to move).
