@@ -22,6 +22,10 @@ type Position struct {
 	// updates in MakeMove/UnmakeMove/MakeNullMove/UnmakeNullMove, rather
 	// than recomputed from scratch on every Hash() call.
 	hash uint64
+
+	// acc is the HalfKA NNUE accumulator, incrementally maintained by
+	// PutPiece/RemovePiece; see nnue.go.
+	acc nnueAccumulator
 }
 
 type UndoPosition struct {
@@ -39,6 +43,7 @@ func (p *Position) PutPiece(s Square, c Color, pt PieceType) {
 	p.Colors[c] |= s.BB()
 	p.Pieces[AllPieces] |= s.BB()
 	p.hash ^= zobristPieces[c][pt][s]
+	p.nnueAddPiece(s, c, pt)
 }
 
 // RemovePiece removes the piece of the given color and type from square s.
@@ -47,6 +52,7 @@ func (p *Position) RemovePiece(s Square, c Color, pt PieceType) {
 	p.Colors[c] &= ^s.BB()
 	p.Pieces[AllPieces] &= ^s.BB()
 	p.hash ^= zobristPieces[c][pt][s]
+	p.nnueRemovePiece(s, c, pt)
 }
 
 // StartPos returns a new Position set up in the standard chess starting configuration.
