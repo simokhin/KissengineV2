@@ -197,9 +197,14 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		}
 	}
 
-	// Null move logic
-	if !nullMove && depth >= 4 && !inCheck && hasNonPawnMaterial(*pos, pos.SideToMove) {
-		R := 3
+	// Null move logic. Skipped when beta is a mate score, same as static null
+	// move above: a fail-high there would rest on an unproven mate found by a
+	// reduced-depth search, which can mask a real forced mate or plant a
+	// spurious mate-bound score in the TT.
+	if !nullMove && depth >= 4 && !inCheck && beta < mateBound && hasNonPawnMaterial(*pos, pos.SideToMove) {
+		// R grows with depth so the reduction stays proportionally cheap at
+		// high depth instead of eating a shrinking fraction of it.
+		R := 3 + depth/6
 
 		oldEnPassantSquare := pos.MakeNullMove()
 
