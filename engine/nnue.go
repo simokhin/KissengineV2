@@ -289,8 +289,12 @@ func (p *Position) nnueForward() int32 {
 // nnueEvalScale matches the `eval_scale` used when training (see
 // ~/projects/bullet/examples/kissengine.rs): sigmoid(centipawns /
 // nnueEvalScale) is the network's implied win probability. nnueForward's
-// return value still carries one extra factor of nnueClipMax (see its own
-// comment), so dequantizing fully needs QA*QB, not just QB.
+// return value still carries one extra factor of nnueClipMax — every layer
+// divides its raw sum by nnueWeightScale (QB) to cancel that layer's own
+// weight scale, which also happens to leave every intermediate activation
+// at nnueClipMax (QA) times its real value throughout, all the way to the
+// final (unactivated) output — so turning nnueForward's return value into
+// the real, unscaled output needs one more division by QA alone, not QA*QB.
 const nnueEvalScale = 400
 
 // useNNUE selects which static evaluation search.go's two call sites use.
@@ -325,7 +329,7 @@ func staticEvalDispatch(pos *Position) int {
 // perspective — the same convention as Evaluate() in eval.go, so the two
 // are interchangeable at call sites (callers negate for Black to move).
 func (p *Position) NNUEEvaluate() int32 {
-	score := p.nnueForward() * nnueEvalScale / (nnueClipMax * nnueWeightScale)
+	score := p.nnueForward() * nnueEvalScale / nnueClipMax
 	if p.SideToMove == Black {
 		score = -score
 	}

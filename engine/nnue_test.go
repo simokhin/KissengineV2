@@ -2,6 +2,85 @@ package engine
 
 import "testing"
 
+// TestNNUEEvaluateKnownWeights hand-derives the expected output through
+// every quantization step (accumulator -> L1 -> L2 -> Out -> centipawns),
+// with weights chosen so no intermediate layer clips and the arithmetic
+// stays easy to verify by hand. This exists because NNUEEvaluate once had a
+// real bug — an extra spurious division by nnueWeightScale (QB) on top of
+// nnueClipMax (QA) — caught only by comparing held-out loss against
+// bullet's own reported training loss (tools/nnueval), which nothing in
+// this file would have caught: TestNNUEForward only checks determinism and
+// that flipping side to move changes the output, and the other tests here
+// never look at absolute magnitude, so a wrong constant divisor sailed
+// through all of them.
+func TestNNUEEvaluateKnownWeights(t *testing.T) {
+	// Zero feature weights make the accumulator equal the bias alone,
+	// regardless of position or perspective — the cheapest way to get a
+	// fully deterministic input into the rest of the network.
+	savedFeatureWeights := nnueFeatureWeights
+	savedFeatureBias := nnueFeatureBias
+	savedL1Weights := nnueL1Weights
+	savedL1Bias := nnueL1Bias
+	savedL2Weights := nnueL2Weights
+	savedL2Bias := nnueL2Bias
+	savedOutWeights := nnueOutWeights
+	savedOutBias := nnueOutBias
+	t.Cleanup(func() {
+		nnueFeatureWeights = savedFeatureWeights
+		nnueFeatureBias = savedFeatureBias
+		nnueL1Weights = savedL1Weights
+		nnueL1Bias = savedL1Bias
+		nnueL2Weights = savedL2Weights
+		nnueL2Bias = savedL2Bias
+		nnueOutWeights = savedOutWeights
+		nnueOutBias = savedOutBias
+	})
+
+	nnueFeatureWeights = [nnueFeatures][nnueHidden]int16{}
+	for i := range nnueFeatureBias {
+		nnueFeatureBias[i] = 10 // accumulator = 10 for every hidden unit
+	}
+	// input[i] = clippedReLU(10) = 10, unclipped (0 <= 10 <= 127).
+
+	for i := range nnueL1Weights {
+		for j := range nnueL1Weights[i] {
+			nnueL1Weights[i][j] = 1
+		}
+	}
+	nnueL1Bias = [nnueL1Size]int32{}
+	// sum = 512 inputs * 10 * weight 1 = 5120; l1out = clippedReLU(5120/64) = 80.
+
+	for i := range nnueL2Weights {
+		for j := range nnueL2Weights[i] {
+			nnueL2Weights[i][j] = 1
+		}
+	}
+	nnueL2Bias = [nnueL2Size]int32{}
+	// sum = 32 inputs * 80 * weight 1 = 2560; l2out = clippedReLU(2560/64) = 40.
+
+	for i := range nnueOutWeights {
+		nnueOutWeights[i] = 1
+	}
+	nnueOutBias = 0
+	// sum = 32 inputs * 40 * weight 1 = 1280; nnueForward() = 1280/64 = 20.
+	// NNUEEvaluate = 20 * 400 / 127 = 8000/127 = 62 (integer division).
+
+	pos := ParseFEN(StartFEN)
+	if got := pos.nnueForward(); got != 20 {
+		t.Fatalf("nnueForward() = %d, want 20", got)
+	}
+
+	const want = 62
+	if got := pos.NNUEEvaluate(); got != want {
+		t.Errorf("White to move: NNUEEvaluate() = %d, want %d", got, want)
+	}
+
+	pos.SideToMove = Black
+	if got := pos.NNUEEvaluate(); got != -want {
+		t.Errorf("Black to move: NNUEEvaluate() = %d, want %d", got, -want)
+	}
+}
+
 func TestHalfKAIndexKnownCases(t *testing.T) {
 	tests := []struct {
 		name        string
