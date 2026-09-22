@@ -17,12 +17,15 @@ func main() {
 	run(os.Stdin, os.Stdout)
 }
 
-// nnueWeightsPath is the fixed checkpoint the UseNNUE UCI option loads,
-// relative to the engine's working directory (repo root, when run from
-// tools/match.sh or cutechess-cli invoked from there). Part of the
-// from-scratch NNUE experiment (see engine/nnue.go), not a real UCI
+// nnueWeightsPath is the fixed checkpoint the UseNNUE UCI option loads.
+// Absolute, deliberately: this binary gets run from more than one working
+// directory (tools/match.sh and cutechess-cli use the repo root; a bot
+// framework like lichess-bot uses its own directory instead), and a
+// relative path would silently fail to load in some of them without ever
+// reporting an error over UCI (see the setoption handler below). Part of
+// the from-scratch NNUE experiment (see engine/nnue.go), not a real UCI
 // option a released build would have.
-const nnueWeightsPath = "data/nnue-v1.bin"
+const nnueWeightsPath = "/home/nikita/projects/KissengineV2/data/nnue-v1.bin"
 
 // uci holds the state of one UCI session.
 type uci struct {
