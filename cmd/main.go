@@ -17,6 +17,13 @@ func main() {
 	run(os.Stdin, os.Stdout)
 }
 
+// nnueWeightsPath is the fixed checkpoint the UseNNUE UCI option loads,
+// relative to the engine's working directory (repo root, when run from
+// tools/match.sh or cutechess-cli invoked from there). Part of the
+// from-scratch NNUE experiment (see engine/nnue.go), not a real UCI
+// option a released build would have.
+const nnueWeightsPath = "data/nnue-v1.bin"
+
 // uci holds the state of one UCI session.
 type uci struct {
 	out   io.Writer
@@ -55,6 +62,7 @@ func run(in io.Reader, out io.Writer) {
 			u.send("id name KissengineV2")
 			u.send("id author Nikita Simokhin")
 			u.send("option name Hash type spin default %d min 1 max 4096", engine.DefaultHashMB)
+			u.send("option name UseNNUE type check default false")
 			u.send("uciok")
 
 		case "isready":
@@ -69,6 +77,21 @@ func run(in io.Reader, out io.Writer) {
 			if len(fields) >= 5 && fields[1] == "name" && strings.EqualFold(fields[2], "Hash") && fields[3] == "value" {
 				if mb, err := strconv.Atoi(fields[4]); err == nil {
 					engine.SetHashSize(mb)
+				}
+			}
+
+			// setoption name UseNNUE value <true/false>. Loads the fixed
+			// experiment checkpoint at nnueWeightsPath on enabling; a load
+			// failure leaves it off rather than searching with garbage
+			// weights. This is a from-scratch experiment (see nnue.go),
+			// not meant for cmd/main.go on main.
+			if len(fields) >= 5 && fields[1] == "name" && strings.EqualFold(fields[2], "UseNNUE") && fields[3] == "value" {
+				if strings.EqualFold(fields[4], "true") {
+					if err := engine.LoadNNUEWeights(nnueWeightsPath); err == nil {
+						engine.SetUseNNUE(true)
+					}
+				} else {
+					engine.SetUseNNUE(false)
 				}
 			}
 
