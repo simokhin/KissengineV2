@@ -23,6 +23,15 @@ const mateBound = MateValue - 1000
 // uses; they are untuned here.
 var lmpLimit = [...]int{0, 8, 12, 16, 20, 24}
 
+// Futility pruning: at depth <= futilityMaxDepth a node counts as futile when
+// staticEval + futilityBase + futilityStep*depth <= alpha. Blunder's values,
+// untuned.
+const (
+	futilityMaxDepth = 6
+	futilityBase     = 40
+	futilityStep     = 60
+)
+
 // losingCaptureOffset is subtracted from the MVV-LVA score of a capture that
 // loses material by SEE. It must exceed the largest MVV-LVA score (~23000 with
 // the tuned piece values) so every losing capture ranks below every quiet move
@@ -171,20 +180,21 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 	inCheck := pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1)
 
-	// Static null move pruning
+	// The static evaluation, computed at null-window nodes outside check (the
+	// only ones static null move and futility pruning look at); zero otherwise.
 	var staticEval int
-	if beta-alpha == 1 && !inCheck && beta < MateValue-1000 {
+	if beta-alpha == 1 && !inCheck {
 		if pos.SideToMove == White {
 			staticEval = Evaluate(pos)
 		} else {
 			staticEval = -Evaluate(pos)
 		}
 
+		// Static null move pruning
 		margin := 85 * depth
-		if staticEval-margin >= beta {
+		if beta < mateBound && staticEval-margin >= beta {
 			return beta
 		}
-
 	}
 
 	// Null move logic
@@ -229,10 +239,17 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 
 	pvNode := beta-alpha > 1
 
-	// Late move pruning applies to null-window nodes outside check, and not while
-	// alpha is a mate score: skipping quiet moves there could miss the only
-	// defence and report a mate that isn't forced.
+	// Late move and futility pruning apply to null-window nodes outside check
+	// (where staticEval was computed), and not while alpha is a mate score:
+	// skipping quiet moves there could miss the only defence and report a mate
+	// that isn't forced.
 	canPrune := !pvNode && !inCheck && alpha > -mateBound && alpha < mateBound
+
+	// Futility: near the horizon, if even a generous margin on top of the static
+	// evaluation stays at or below alpha, quiet moves after the first are not
+	// expected to raise it and are skipped.
+	futile := canPrune && depth <= futilityMaxDepth &&
+		staticEval+futilityBase+futilityStep*depth <= alpha
 
 	for i := range moves {
 		move := pickBest(moves, scores[:len(moves)], i)
@@ -246,8 +263,10 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		givesCheck := pos.IsAttacked(pos.KingSquare(pos.SideToMove), pos.SideToMove^1)
 
 		// Late move pruning: near the horizon, a quiet move that the ordering put
-		// this far back (and that doesn't check) is not searched at all.
-		if canPrune && quiet && !givesCheck && depth < len(lmpLimit) && i >= lmpLimit[depth] {
+		// this far back (and that doesn't check) is not searched at all. The
+		// same goes for any quiet move after the first at a futile node.
+		if canPrune && quiet && !givesCheck &&
+			((futile && i > 0) || (depth < len(lmpLimit) && i >= lmpLimit[depth])) {
 			pos.UnmakeMove(move, undo)
 			continue
 		}
