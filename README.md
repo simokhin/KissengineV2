@@ -115,6 +115,23 @@ positions; regenerate with `go run ./tools/genopenings testdata/openings-8ply.ep
 land in `bin/match-<timestamp>/match.pgn`. Mind memory: each engine process needs roughly
 `HASH + 50` MB, and the script refuses to start if that times the concurrency does not fit.
 
+### Node-count benchmark
+
+[tools/nodebench](tools/nodebench) compares fixed-depth node counts between the working tree
+and a git ref over a sample of positions — much faster than a full match, and a reasonable
+first check for a move-ordering or pruning change before spending games on it:
+
+```sh
+go run ./tools/nodebench [BASE_REF]               # default: HEAD, depth 9, 40 positions
+go run ./tools/nodebench -depth 10 -n 40 main~3
+```
+
+It builds both sides the same way `tools/match.sh` does (`-pgo=off`, so a stray
+`cmd/default.pgo` doesn't skew the comparison), samples positions evenly across
+`testdata/openings-8ply.epd`, and reports the geometric mean of the node ratio plus how many
+positions improved, regressed, or changed their best move/score (a change there isn't
+necessarily a bug, but is worth a look).
+
 ### Evaluation tuning
 
 [tools/texel](tools/texel) fits the evaluation weights with Texel's tuning method on
