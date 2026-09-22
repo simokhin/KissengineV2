@@ -85,6 +85,13 @@ type SearchState struct {
 	killers    [64][2]Move
 	historyHeu [2][64][64]int
 
+	// counterMove[side][from][to] is the quiet move by side that last caused a
+	// beta cutoff in reply to the opponent's move from->to. Indexed by from/to
+	// rather than by ply, unlike killers, so it carries information between
+	// unrelated branches of the tree that just happen to answer the same
+	// threat, not only within one line.
+	counterMove [2][64][64]Move
+
 	// rootIdx is the index of the root position in the history slice passed to
 	// Negamax: entries before it are game history, entries from it on were
 	// reached during this search. Set by BestMove.
@@ -113,8 +120,11 @@ type SearchState struct {
 }
 
 // Negamax performs a depth-limited negamax search with alpha-beta pruning
-// and returns the score from the perspective of the side to move.
-func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, history []uint64, nullMove bool, extensions int) int {
+// and returns the score from the perspective of the side to move. prevMove is
+// the move that led to this position (Move(0), never a legal move, if there
+// isn't one: at the root, or for the position right after a null move), used
+// to look up and store the countermove heuristic.
+func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, history []uint64, nullMove bool, extensions int, prevMove Move) int {
 	s.nodes++
 
 	select {
@@ -216,7 +226,7 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		if !skip {
 			oldEnPassantSquare := pos.MakeNullMove()
 
-			nullScore := -s.Negamax(pos, depth-1-R, ply+1, -beta, -beta+1, history, true, extensions)
+			nullScore := -s.Negamax(pos, depth-1-R, ply+1, -beta, -beta+1, history, true, extensions, Move(0))
 
 			pos.UnmakeNullMove(oldEnPassantSquare)
 
@@ -238,12 +248,21 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		return 0
 	}
 
-	// Order moves (ttMove => captures => killers => others): score once here,
-	// then pickBest selects the next move lazily, so a node that cuts off on
-	// its first moves never orders the rest.
+	// The countermove heuristic's suggestion for this node: the quiet move
+	// that last refuted prevMove elsewhere in the tree. Move(0) (no
+	// suggestion) both when there is no prevMove and when none was ever
+	// stored for it, since the table starts zero-valued.
+	var counterMove Move
+	if prevMove != 0 {
+		counterMove = s.counterMove[pos.SideToMove][prevMove.From()][prevMove.To()]
+	}
+
+	// Order moves (ttMove => captures => killers => countermove => others):
+	// score once here, then pickBest selects the next move lazily, so a node
+	// that cuts off on its first moves never orders the rest.
 	var scores [maxMoves]int32
 	for i, m := range moves {
-		scores[i] = int32(s.orderScore(*pos, ply, m, entry.bestMove))
+		scores[i] = int32(s.orderScore(*pos, ply, m, entry.bestMove, counterMove))
 	}
 
 	// Variables for creating ttEntry
@@ -290,10 +309,10 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 		search := func(a, b, reduction int) int {
 			// Check extension
 			if givesCheck && extensions < 16 {
-				return -s.Negamax(pos, depth, ply+1, a, b, newHistory, false, extensions+1)
+				return -s.Negamax(pos, depth, ply+1, a, b, newHistory, false, extensions+1, move)
 			}
 
-			return -s.Negamax(pos, depth-1-reduction, ply+1, a, b, newHistory, false, extensions)
+			return -s.Negamax(pos, depth-1-reduction, ply+1, a, b, newHistory, false, extensions, move)
 		}
 
 		// Principal Variation Search
@@ -325,6 +344,13 @@ func (s *SearchState) Negamax(pos *Position, depth, ply int, alpha, beta int, hi
 				// History heuristic: credited even when the move is already the
 				// first killer, so moves that keep causing cutoffs keep gaining.
 				s.historyHeu[pos.SideToMove][move.From()][move.To()] += depth * depth
+
+				// Countermove heuristic: remember move as the reply to prevMove,
+				// so a sibling node elsewhere in the tree that faces the same
+				// threat tries it early too.
+				if prevMove != 0 {
+					s.counterMove[pos.SideToMove][prevMove.From()][prevMove.To()] = move
+				}
 			}
 
 			// Store position in tTable
@@ -452,9 +478,11 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 		ttMove = entry.bestMove
 	}
 
-	// Ordering move ttMove => Captures => Others
+	// Ordering move ttMove => Captures => Others. No countermove suggestion
+	// here: the root has no prevMove tracked as a Move (only the game history
+	// of hashes), and it already orders well from ttMove/rootBest.
 	sortMovesByScore(moves, func(m Move) int {
-		return s.orderScore(pos, 0, m, ttMove)
+		return s.orderScore(pos, 0, m, ttMove, Move(0))
 	})
 
 	bestMove := moves[0]
@@ -468,7 +496,7 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 		// bestMove and for rootPartial) if the context was still alive after it.
 		var score int
 		if i == 0 {
-			score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
+			score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0, move)
 			if s.ctx.Err() == nil && score > alpha {
 				s.rootPartial = move
 			}
@@ -477,13 +505,13 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 			}
 		} else {
 			// Null window: we only need to know whether this move beats alpha.
-			score = -s.Negamax(&pos, depth-1, 1, -alpha-1, -alpha, newHistory, false, 0)
+			score = -s.Negamax(&pos, depth-1, 1, -alpha-1, -alpha, newHistory, false, 0, move)
 			if s.ctx.Err() == nil && score > alpha && score < beta {
 				// It beats the best move so far, however the re-search below ends.
 				previous := s.rootPartial
 				s.rootPartial = move
 				s.unstable.Store(true) // another move has taken over
-				score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0)
+				score = -s.Negamax(&pos, depth-1, 1, -beta, -alpha, newHistory, false, 0, move)
 				if s.ctx.Err() == nil && score <= alpha {
 					s.rootPartial = previous // the re-search didn't confirm it
 				}
@@ -520,7 +548,7 @@ func BestMove(s *SearchState, pos Position, depth int, history []uint64, alpha, 
 // noisyBase is added to the score of every capture and queen promotion in
 // moveScore. The raw MVV-LVA value, victim*10 - attacker, is negative for a
 // queen taking a pawn once the queen is worth more than ten pawns, and it
-// would then rank below the killers (50/40) and the quiet moves; adding the
+// would then rank below the killers (60/50) and the quiet moves; adding the
 // queen's value (the largest attacker) keeps every such move at or above
 // 10*pawn, whatever pieceValues holds after a retune. It shifts all these moves
 // alike, so their order among themselves is the plain MVV-LVA order.
@@ -616,7 +644,7 @@ func (s *SearchState) storeKiller(ply int, move Move) {
 	s.killers[ply][0] = move
 }
 
-func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int {
+func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move, counterMove Move) int {
 	if m == ttMove {
 		return 1_000_000
 	}
@@ -636,14 +664,20 @@ func (s *SearchState) orderScore(pos Position, ply int, m Move, ttMove Move) int
 	if !capture {
 		switch m {
 		case s.killers[ply][0]:
-			score += 50
+			score += 60
 		case s.killers[ply][1]:
+			score += 50
+		case counterMove:
+			// counterMove is Move(0) (never a legal move) when there was no
+			// prevMove or nothing is stored for it yet, so this case can only
+			// match a real move.
 			score += 40
 		default:
-			// History heuristic, capped below the second killer (40) so it can
-			// never outrank a killer. The divisor was picked by node counts over
-			// random positions: with 1000 only the top few percent of moves reached
-			// a nonzero score, and 30-100 all searched noticeably fewer nodes.
+			// History heuristic, capped below the countermove bonus (40) so it
+			// can never outrank a killer or the countermove. The divisor was
+			// picked by node counts over random positions: with 1000 only the
+			// top few percent of moves reached a nonzero score, and 30-100 all
+			// searched noticeably fewer nodes.
 			score += s.historyBonus(pos.SideToMove, m)
 		}
 	}

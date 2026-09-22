@@ -23,7 +23,7 @@ func init() {
 const lmrHistoryThreshold = 20
 
 // historyBonus is the history heuristic's contribution to a quiet move's
-// ordering score, capped below the killer bonuses (50/40).
+// ordering score, capped below the killer and countermove bonuses (60/50/40).
 func (s *SearchState) historyBonus(side Color, m Move) int {
 	return min(s.historyHeu[side][m.From()][m.To()]/100, 39)
 }

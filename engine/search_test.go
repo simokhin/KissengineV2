@@ -23,7 +23,7 @@ func TestNegamaxMate(t *testing.T) {
 	alpha := Minimum
 	beta := Maximum
 
-	score := s.Negamax(&pos, 1, 1, alpha, beta, history, false, 0)
+	score := s.Negamax(&pos, 1, 1, alpha, beta, history, false, 0, Move(0))
 	t.Logf("negamax score for black (mated): %d", score)
 	if score > -(MateValue - 1000) {
 		t.Fatalf("want score <= %d, got %d", -(MateValue - 1000), score)
@@ -46,7 +46,7 @@ func TestPlyBeyondKillersBounds(t *testing.T) {
 
 	s.storeKiller(deepPly, NewMove(B1, C3))
 
-	score := s.orderScore(*pos, deepPly, NewMove(B1, C3), Move(0))
+	score := s.orderScore(*pos, deepPly, NewMove(B1, C3), Move(0), Move(0))
 	t.Logf("orderScore at ply=%d: %d", deepPly, score)
 }
 
@@ -88,20 +88,92 @@ func TestOrderScoreLosingCaptureLast(t *testing.T) {
 	s := &SearchState{ctx: context.Background()}
 
 	losing := ParseFEN("4k3/8/2p5/3p4/8/8/8/3QK3 w - - 0 1")
-	quiet := s.orderScore(*losing, 0, NewMove(E1, F1), Move(0))
-	bad := s.orderScore(*losing, 0, NewMove(D1, D5), Move(0))
+	quiet := s.orderScore(*losing, 0, NewMove(E1, F1), Move(0), Move(0))
+	bad := s.orderScore(*losing, 0, NewMove(D1, D5), Move(0), Move(0))
 	if bad >= quiet {
 		t.Errorf("losing capture scored %d, must rank below a quiet move (%d)", bad, quiet)
 	}
-	if tt := s.orderScore(*losing, 0, NewMove(D1, D5), NewMove(D1, D5)); tt <= quiet {
+	if tt := s.orderScore(*losing, 0, NewMove(D1, D5), NewMove(D1, D5), Move(0)); tt <= quiet {
 		t.Errorf("TT move scored %d, must rank above everything (quiet %d)", tt, quiet)
 	}
 
 	winning := ParseFEN("4k3/8/8/3p4/8/8/8/3QK3 w - - 0 1")
-	quiet = s.orderScore(*winning, 0, NewMove(E1, F1), Move(0))
-	good := s.orderScore(*winning, 0, NewMove(D1, D5), Move(0))
+	quiet = s.orderScore(*winning, 0, NewMove(E1, F1), Move(0), Move(0))
+	good := s.orderScore(*winning, 0, NewMove(D1, D5), Move(0), Move(0))
 	if good <= quiet {
 		t.Errorf("winning capture scored %d, must rank above a quiet move (%d)", good, quiet)
+	}
+}
+
+// TestOrderScoreCounterMoveBand checks the quiet-move tier order: killer1 >
+// killer2 > countermove > plain history, and that the countermove case can
+// only ever match a real move (Move(0), meaning "no countermove stored", is
+// never a legal move, so it can't accidentally match one).
+func TestOrderScoreCounterMoveBand(t *testing.T) {
+	s := &SearchState{ctx: context.Background()}
+	pos := StartPos()
+
+	a, b, c := NewMove(B1, C3), NewMove(G1, F3), NewMove(A2, A3)
+
+	plain := s.orderScore(*pos, 0, a, Move(0), Move(0))
+	if plain != 0 {
+		t.Fatalf("quiet move with no bonus: want 0, got %d", plain)
+	}
+
+	asCounter := s.orderScore(*pos, 0, a, Move(0), a)
+	if asCounter <= plain {
+		t.Errorf("countermove bonus not applied: plain %d, as countermove %d", plain, asCounter)
+	}
+
+	s.historyHeu[White][a.From()][a.To()] = 39 * 100 // historyBonus caps at 39
+	asHistory := s.orderScore(*pos, 0, a, Move(0), Move(0))
+	if asHistory >= asCounter {
+		t.Errorf("max history (%d) must still rank below the countermove bonus (%d)", asHistory, asCounter)
+	}
+
+	s.storeKiller(0, b) // killers[0] = {b}
+	killer1 := s.orderScore(*pos, 0, b, Move(0), a)
+	s.storeKiller(0, c) // killers[0] = {c, b}: b is now the second killer
+	killer2 := s.orderScore(*pos, 0, b, Move(0), a)
+	if killer2 <= asCounter {
+		t.Errorf("second killer (%d) must rank above the countermove bonus (%d)", killer2, asCounter)
+	}
+	if killer1 <= killer2 {
+		t.Errorf("first killer (%d) must rank above the second (%d)", killer1, killer2)
+	}
+}
+
+// TestCounterMoveStoredOnCutoff checks that a quiet move causing a beta
+// cutoff is recorded as the countermove to prevMove -- the move that led to
+// this node -- the mechanism orderScore reads to raise a move in a sibling
+// subtree that answers the same threat.
+func TestCounterMoveStoredOnCutoff(t *testing.T) {
+	s := &SearchState{ctx: context.Background()}
+
+	pos := &Position{}
+	pos.PutPiece(H8, Black, King)
+	pos.PutPiece(G7, Black, Pawn)
+	pos.PutPiece(H7, Black, Pawn)
+	pos.PutPiece(A1, White, Rook)
+	pos.PutPiece(G1, White, King)
+	pos.SideToMove = White
+
+	history := []uint64{pos.Hash()}
+	prevMove := NewMove(E7, E5) // arbitrary: only used as a table index here
+
+	if got := s.counterMove[White][prevMove.From()][prevMove.To()]; got != 0 {
+		t.Fatalf("counterMove table not empty before the search: %v", got)
+	}
+
+	// Ra1-a8# is quiet (a8 is empty) and the only mating move, so the search
+	// must find it and fail high on it, whatever else the ordering tries
+	// first. The window sits just under mateBound: high enough that White's
+	// small material edge can't trigger static null move pruning first, low
+	// enough that only the mate score clears it.
+	s.Negamax(pos, 1, 1, mateBound-2, mateBound-1, history, false, 0, prevMove)
+
+	if got := s.counterMove[White][prevMove.From()][prevMove.To()]; got != NewMove(A1, A8) {
+		t.Errorf("countermove for %v: want Ra1-a8 (the mating move), got %v", prevMove, got)
 	}
 }
 
@@ -125,13 +197,13 @@ func TestTTCutoffSkippedForRepeatedPosition(t *testing.T) {
 	s := &SearchState{ctx: context.Background(), rootIdx: 1}
 
 	// h occurs only as the node itself: the stored score is trusted.
-	if got := s.Negamax(pos, 3, 1, Minimum, Maximum, []uint64{other, h}, false, 0); got != 5000 {
+	if got := s.Negamax(pos, 3, 1, Minimum, Maximum, []uint64{other, h}, false, 0, Move(0)); got != 5000 {
 		t.Fatalf("no earlier occurrence: want the TT score 5000, got %d", got)
 	}
 
 	// h already occurred before the root: no TT cutoff, the position is searched.
 	ttStore(h, 30, 5000, Exact, Move(0))
-	got := s.Negamax(pos, 3, 1, Minimum, Maximum, []uint64{h, other, h}, false, 0)
+	got := s.Negamax(pos, 3, 1, Minimum, Maximum, []uint64{h, other, h}, false, 0, Move(0))
 	if got == 5000 || got <= 0 {
 		t.Fatalf("repeated position: want a real search score (winning, not the TT's 5000), got %d", got)
 	}
@@ -149,7 +221,7 @@ func TestRepetitionScoring(t *testing.T) {
 		s := &SearchState{ctx: context.Background(), rootIdx: rootIdx}
 		tTable[ttIndex(h)] = ttSlot{}
 		defer func() { tTable[ttIndex(h)] = ttSlot{} }()
-		return s.Negamax(pos, 3, 1, Minimum, Maximum, history, nullMove, 0)
+		return s.Negamax(pos, 3, 1, Minimum, Maximum, history, nullMove, 0, Move(0))
 	}
 
 	if got := search(1, false, []uint64{a, h, a, h}); got != 0 {
