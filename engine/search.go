@@ -537,10 +537,12 @@ func noisyBase() int {
 func moveScore(pos Position, m Move) (score int, capture bool) {
 	// A queen promotion gains about a queen minus the pawn, on the same x10
 	// scale as the capture values below; underpromotions get no bonus so they
-	// are still searched late.
-	var promotionBonus int
+	// are still searched late. This is a pure bonus, not itself shifted by
+	// noisyBase: a capturing promotion must only get that shift once, from
+	// the capture below, not once per noisy component of the move.
+	var promotionGain int
 	if isQueenPromotion(m) {
-		promotionBonus = (pieceValues[Queen]-pieceValues[Pawn])*10 + noisyBase()
+		promotionGain = (pieceValues[Queen] - pieceValues[Pawn]) * 10
 	}
 
 	captured := pos.PieceAt(m.To())
@@ -550,10 +552,13 @@ func moveScore(pos Position, m Move) (score int, capture bool) {
 		if attacker == Pawn && m.From().File() != m.To().File() {
 			return pieceValues[Pawn]*10 - pieceValues[Pawn] + noisyBase(), true
 		}
-		return promotionBonus, false
+		if promotionGain == 0 {
+			return 0, false
+		}
+		return promotionGain + noisyBase(), false
 	}
 	attacker := pos.PieceAt(m.From())
-	return pieceValues[captured]*10 - pieceValues[attacker] + noisyBase() + promotionBonus, true
+	return pieceValues[captured]*10 - pieceValues[attacker] + promotionGain + noisyBase(), true
 }
 
 // isQueenPromotion reports whether move m promotes a pawn to a queen.
